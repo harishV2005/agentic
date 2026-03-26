@@ -1,0 +1,8 @@
+{
+  "name": "AgriSeva AI",
+  "description": "Multi-agent AI platform for smallholder farmers in India providing crop advice, weather insights, and market strategies.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
