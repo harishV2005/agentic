@@ -195,32 +195,174 @@ const SplashScreen = ({ onComplete, isReady }: { onComplete: () => void, isReady
   );
 };
 
-const Onboarding = ({ onSelect }: { onSelect: (lang: Language) => void }) => {
+const Onboarding = ({ onComplete }: { onComplete: (data: { lang: Language, location: string, crop: string }) => void }) => {
+  const [step, setStep] = useState(1);
+  const [selectedLang, setSelectedLang] = useState<Language>('en');
+  const [selectedState, setSelectedState] = useState('');
+  const [selectedDistrict, setSelectedDistrict] = useState('');
+  const [selectedCrop, setSelectedCrop] = useState('');
+
+  const handleNext = () => {
+    if (step === 1) setStep(2);
+    else if (step === 2) {
+      if (selectedState && selectedDistrict) setStep(3);
+    } else {
+      if (selectedCrop) {
+        onComplete({
+          lang: selectedLang,
+          location: `${selectedDistrict}, ${selectedState}`,
+          crop: selectedCrop
+        });
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-surface p-8 flex flex-col justify-center">
-      <div className="mb-12 text-center">
-        <h2 className="text-3xl font-bold text-primary mb-4">Welcome to AgriSeva</h2>
-        <p className="text-stone-500">Please select your preferred language to continue</p>
-      </div>
-      <div className="space-y-4">
-        {[
-          { id: 'en', label: 'English', sub: 'Continue in English' },
-          { id: 'hi', label: 'हिन्दी', sub: 'हिंदी में जारी रखें' },
-          { id: 'ta', label: 'தமிழ்', sub: 'தமிழில் தொடரவும்' },
-        ].map((lang) => (
-          <button
-            key={lang.id}
-            onClick={() => onSelect(lang.id as Language)}
-            className="w-full p-6 bg-white rounded-xl border border-stone-100 shadow-sm flex items-center justify-between hover:border-primary transition-all group"
+      <AnimatePresence mode="wait">
+        {step === 1 && (
+          <motion.div
+            key="step1"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-8"
           >
-            <div className="text-left">
-              <div className="text-xl font-bold text-stone-800 group-hover:text-primary">{lang.label}</div>
-              <div className="text-sm text-stone-400">{lang.sub}</div>
+            <div className="text-center">
+              <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Globe className="text-primary w-8 h-8" />
+              </div>
+              <h2 className="text-3xl font-bold text-stone-800 mb-3">Select Language</h2>
+              <p className="text-stone-500">Choose your preferred language for communication</p>
             </div>
-            <Globe className="text-stone-300 group-hover:text-primary" />
-          </button>
-        ))}
-      </div>
+            <div className="space-y-3">
+              {[
+                { id: 'en', label: 'English', sub: 'Continue in English' },
+                { id: 'hi', label: 'हिन्दी', sub: 'हिंदी में जारी रखें' },
+                { id: 'ta', label: 'தமிழ்', sub: 'தமிழில் தொடரவும்' },
+              ].map((lang) => (
+                <button
+                  key={lang.id}
+                  onClick={() => {
+                    setSelectedLang(lang.id as Language);
+                    setStep(2);
+                  }}
+                  className={cn(
+                    "w-full p-5 rounded-xl border flex items-center justify-between transition-all group",
+                    selectedLang === lang.id ? "bg-primary/5 border-primary shadow-sm" : "bg-white border-stone-100"
+                  )}
+                >
+                  <div className="text-left">
+                    <div className="font-bold text-stone-800">{lang.label}</div>
+                    <div className="text-xs text-stone-400">{lang.sub}</div>
+                  </div>
+                  {selectedLang === lang.id && <CheckCircle2 className="text-primary w-5 h-5" />}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {step === 2 && (
+          <motion.div
+            key="step2"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-8"
+          >
+            <div className="text-center">
+              <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <MapPin className="text-primary w-8 h-8" />
+              </div>
+              <h2 className="text-3xl font-bold text-stone-800 mb-3">Your Location</h2>
+              <p className="text-stone-500">Help us tailor advice to your local weather and soil</p>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">State</label>
+                <select 
+                  value={selectedState}
+                  onChange={(e) => {
+                    setSelectedState(e.target.value);
+                    setSelectedDistrict('');
+                  }}
+                  className="w-full p-4 bg-white rounded-xl border border-stone-100 focus:ring-2 focus:ring-primary/20 outline-none font-medium"
+                >
+                  <option value="">Select State</option>
+                  {Object.keys(LOCATION_DATA).map(state => (
+                    <option key={state} value={state}>{state}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-stone-400 uppercase tracking-wider">District</label>
+                <select 
+                  value={selectedDistrict}
+                  disabled={!selectedState}
+                  onChange={(e) => setSelectedDistrict(e.target.value)}
+                  className="w-full p-4 bg-white rounded-xl border border-stone-100 focus:ring-2 focus:ring-primary/20 outline-none font-medium disabled:opacity-50"
+                >
+                  <option value="">Select District</option>
+                  {selectedState && LOCATION_DATA[selectedState].map(dist => (
+                    <option key={dist} value={dist}>{dist}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleNext}
+                disabled={!selectedState || !selectedDistrict}
+                className="w-full py-4 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 disabled:opacity-50 transition-all active:scale-95"
+              >
+                Continue
+              </button>
+              <button onClick={() => setStep(1)} className="w-full text-stone-400 text-sm font-medium">Back</button>
+            </div>
+          </motion.div>
+        )}
+
+        {step === 3 && (
+          <motion.div
+            key="step3"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-8"
+          >
+            <div className="text-center">
+              <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <Leaf className="text-primary w-8 h-8" />
+              </div>
+              <h2 className="text-3xl font-bold text-stone-800 mb-3">Primary Crop</h2>
+              <p className="text-stone-500">What is the main crop you are growing right now?</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {VALID_CROPS.slice(0, 10).map((crop) => (
+                <button
+                  key={crop}
+                  onClick={() => setSelectedCrop(crop)}
+                  className={cn(
+                    "p-4 rounded-xl border text-sm font-bold transition-all",
+                    selectedCrop === crop ? "bg-primary text-white border-primary shadow-md" : "bg-white text-stone-600 border-stone-100"
+                  )}
+                >
+                  {crop}
+                </button>
+              ))}
+            </div>
+            <div className="space-y-4">
+              <button
+                onClick={handleNext}
+                disabled={!selectedCrop}
+                className="w-full py-4 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 disabled:opacity-50 transition-all active:scale-95"
+              >
+                Finish Setup
+              </button>
+              <button onClick={() => setStep(2)} className="w-full text-stone-400 text-sm font-medium">Back</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -368,6 +510,11 @@ export default function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const profileDataRef = useRef(profileData);
+
+  useEffect(() => {
+    profileDataRef.current = profileData;
+  }, [profileData]);
 
   // Auth Listener
   useEffect(() => {
@@ -417,6 +564,18 @@ export default function App() {
             setSelectedState(locParts[1].trim());
           }
         }
+      } else {
+        // If profile doesn't exist, save the current local profile data (which might have been set during onboarding)
+        const initialProfile = {
+          uid: user.uid,
+          name: user.displayName || 'Farmer',
+          location: profileDataRef.current.location,
+          crops: profileDataRef.current.crops,
+          farmSize: profileDataRef.current.farmSize,
+          farmUnit: profileDataRef.current.farmUnit,
+          updatedAt: serverTimestamp()
+        };
+        setDoc(doc(db, path), initialProfile).catch(err => handleFirestoreError(err, OperationType.WRITE, path));
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, path);
@@ -679,8 +838,21 @@ export default function App() {
           }} 
         />;
       case 'onboarding':
-        return <Onboarding onSelect={(lang) => { 
-          setLanguage(lang); 
+        return <Onboarding onComplete={(data) => { 
+          setLanguage(data.lang);
+          setProfileData(prev => ({
+            ...prev,
+            location: data.location,
+            crops: data.crop
+          }));
+          // Pre-populate selection states for profile edit screen
+          const locParts = data.location.split(',');
+          if (locParts.length === 2) {
+            setSelectedDistrict(locParts[0].trim());
+            setSelectedState(locParts[1].trim());
+          }
+          setSelectedCrop(data.crop);
+
           if (user) setScreen('home');
           else setScreen('login');
         }} />;
