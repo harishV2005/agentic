@@ -104,6 +104,9 @@ export async function checkSchemeEligibility(schemeName: string, lang: string = 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }]
+      }
     });
 
     return response.text || "Unable to determine eligibility at this time.";
@@ -113,19 +116,26 @@ export async function checkSchemeEligibility(schemeName: string, lang: string = 
   }
 }
 
-export async function getWeatherAdvice(location: string, lang: string = 'en', crop: string = 'Paddy') {
+export async function getWeatherAdvice(location: string, lang: string = 'en', crop: string = 'Paddy', weatherData?: { temp: number, humidity: number, condition: string }) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return "Weather advice is currently unavailable.";
 
   const ai = new GoogleGenAI({ apiKey });
   
+  let weatherContext = `typical seasonal weather in ${location}`;
+  if (weatherData) {
+    weatherContext = `current weather: ${weatherData.temp}°C, ${weatherData.humidity}% humidity, ${weatherData.condition}`;
+  }
+
   const prompt = `
     Act as an Agricultural Weather Expert. 
     Provide weather-based farming advice for a farmer in ${location} growing ${crop}.
     
+    Context: ${weatherContext}.
+    
     Provide a concise response (max 4 sentences) covering:
     1. Current seasonal weather risks in ${location}.
-    2. Irrigation or pesticide application advice based on typical weather.
+    2. Irrigation or pesticide application advice based on ${weatherData ? 'current' : 'typical'} weather.
     3. One specific action for the next 48 hours.
     
     Respond strictly in ${lang === 'ta' ? 'Tamil' : lang === 'hi' ? 'Hindi' : 'English'}.
@@ -135,12 +145,44 @@ export async function getWeatherAdvice(location: string, lang: string = 'en', cr
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }]
+      }
     });
 
     return response.text || "Unable to fetch weather advice.";
   } catch (error) {
     console.error("Weather Advice Error:", error);
     return "Error fetching weather advice.";
+  }
+}
+
+export async function findNearbyAgriOffices(location: string, lang: string = 'en') {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return "Location services are currently unavailable.";
+
+  const ai = new GoogleGenAI({ apiKey });
+  
+  const prompt = `
+    Find 3 nearby government agricultural offices or Krishi Vigyan Kendras (KVK) near ${location}.
+    Provide their names and a very brief description of what they do.
+    
+    Respond strictly in ${lang === 'ta' ? 'Tamil' : lang === 'hi' ? 'Hindi' : 'English'}.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        tools: [{ googleMaps: {} }]
+      }
+    });
+
+    return response.text || "Unable to find nearby offices.";
+  } catch (error) {
+    console.error("Maps Grounding Error:", error);
+    return "Error finding nearby agricultural offices.";
   }
 }
 
@@ -161,6 +203,7 @@ export async function getAgriAdvice(prompt: string, lang: string = 'en', locatio
       contents: prompt,
       config: {
         systemInstruction: getSystemInstruction(lang, location, crop),
+        tools: [{ googleSearch: {} }],
         temperature: 0.7,
       },
     });

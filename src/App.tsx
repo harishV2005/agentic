@@ -22,7 +22,8 @@ import {
   Edit2,
   Save,
   X,
-  History
+  History,
+  MapPin
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -37,21 +38,27 @@ import {
 } from 'recharts';
 import { cn } from './lib/utils';
 import { Screen, Language, Message, WeatherData } from './types';
-import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvice } from './services/gemini';
+import { 
+  getAgriAdvice, 
+  analyzeCropImage, 
+  checkSchemeEligibility, 
+  getWeatherAdvice,
+  findNearbyAgriOffices 
+} from './services/gemini';
 
 // --- Mock Data ---
-const VALID_LOCATIONS = [
-  'Tamil Nadu',
-  'Maharashtra',
-  'Punjab',
-  'Karnataka',
-  'Andhra Pradesh',
-  'Uttar Pradesh',
-  'Gujarat',
-  'Rajasthan',
-  'Madhya Pradesh',
-  'West Bengal'
-];
+const LOCATION_DATA: Record<string, string[]> = {
+  'Tamil Nadu': ['Chennai', 'Coimbatore', 'Madurai', 'Trichy','Tirunelveli', 'Karur', 'Salem', 'Tanjore'],
+  'Karnataka': ['Bangalore', 'Mysore', 'Mangalore'],
+  'Kerala': ['Kochi', 'Thiruvananthapuram', 'Kozhikode'],
+  'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur'],
+  'Telangana': ['Hyderabad', 'Warangal', 'Nizamabad'],
+  'Maharashtra': ['Mumbai', 'Pune', 'Nagpur', 'Nashik'],
+  'Delhi': ['New Delhi', 'North Delhi', 'South Delhi']
+};
+
+const VALID_CROPS = ['Paddy', 'Wheat', 'Sugarcane', 'Cotton', 'Maize','Millet', 'Tomato', 'Chilly'];
+
 const MOCK_WEATHER: WeatherData = {
   temp: 32,
   condition: "Partly Cloudy",
@@ -201,12 +208,21 @@ export default function App() {
   const [weatherAdvice, setWeatherAdvice] = useState<string>('');
   const [isLoadingWeatherAdvice, setIsLoadingWeatherAdvice] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [isWeatherLoading, setIsWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [nearbyOffices, setNearbyOffices] = useState<string | null>(null);
+  const [isLoadingOffices, setIsLoadingOffices] = useState(false);
   const [profileData, setProfileData] = useState({
     name: 'Harish Kumar',
-    location: 'Tamil Nadu',
-    crops: 'Paddy, Tomato',
-    experience: '12 Years'
+    location: 'Chennai, Tamil Nadu',
+    crops: 'Paddy'
   });
+
+  const [selectedState, setSelectedState] = useState('Tamil Nadu');
+  const [selectedDistrict, setSelectedDistrict] = useState('Chennai');
+  const [selectedCrop, setSelectedCrop] = useState('Paddy');
+  const [cropError, setCropError] = useState<string | null>(null);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -236,17 +252,73 @@ export default function App() {
     }
   }, [language]);
 
-  // Fetch weather advice when location or language changes
+  const fetchWeather = async (location: string) => {
+    const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+    if (!apiKey) {
+      console.warn("OpenWeatherMap API Key is missing. Using mock data.");
+      setWeatherData(MOCK_WEATHER);
+      return MOCK_WEATHER;
+    }
+
+    setIsWeatherLoading(true);
+    setWeatherError(null);
+
+    try {
+      // Use the district/city part of the location string
+      const city = location.split(',')[0].trim();
+      const response = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=metric`
+      );
+
+      if (!response.ok) {
+        throw new Error(response.status === 404 ? "Invalid location. Please select a valid city." : "Failed to fetch weather data.");
+      }
+
+      const data = await response.json();
+      
+      const newWeatherData: WeatherData = {
+        temp: Math.round(data.main.temp),
+        condition: data.weather[0].main,
+        humidity: data.main.humidity,
+        windSpeed: Math.round(data.wind.speed * 3.6), // Convert m/s to km/h
+        uvIndex: "Moderate", // Current weather API doesn't provide UV index
+        forecast: MOCK_WEATHER.forecast, // Mock forecast as free API only gives current
+        hourly: MOCK_WEATHER.hourly // Mock hourly as free API only gives current
+      };
+
+      setWeatherData(newWeatherData);
+      return newWeatherData;
+    } catch (err: any) {
+      setWeatherError(err.message);
+      setWeatherData(null);
+      return null;
+    } finally {
+      setIsWeatherLoading(false);
+    }
+  };
+
+  // Fetch weather and advice when location or language changes
   useEffect(() => {
-    const fetchWeatherAdvice = async () => {
+    const updateWeatherAndAdvice = async () => {
       if (screen === 'weather' || screen === 'home') {
+        const currentWeather = await fetchWeather(profileData.location);
+        
         setIsLoadingWeatherAdvice(true);
-        const advice = await getWeatherAdvice(profileData.location, language, profileData.crops);
+        const advice = await getWeatherAdvice(
+          profileData.location, 
+          language, 
+          profileData.crops,
+          currentWeather ? { 
+            temp: currentWeather.temp, 
+            humidity: currentWeather.humidity, 
+            condition: currentWeather.condition 
+          } : undefined
+        );
         setWeatherAdvice(advice);
         setIsLoadingWeatherAdvice(false);
       }
     };
-    fetchWeatherAdvice();
+    updateWeatherAndAdvice();
   }, [profileData.location, language, screen]);
 
   const toggleListening = () => {
@@ -409,27 +481,44 @@ export default function App() {
                 <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
                 <div className="relative z-10">
                   <p className="text-xs font-bold uppercase tracking-widest opacity-70 mb-2">Current Weather</p>
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h3 className="text-5xl font-black">{MOCK_WEATHER.temp}°C</h3>
-                      <p className="text-lg font-medium opacity-90">{MOCK_WEATHER.condition}</p>
+                  {isWeatherLoading ? (
+                    <div className="py-10 flex flex-col items-center justify-center">
+                      <div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin mb-4"></div>
+                      <p className="text-sm font-bold">Fetching weather...</p>
                     </div>
-                    <CloudSun size={64} className="text-secondary-container" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/20">
-                    <div>
-                      <p className="text-[10px] uppercase font-bold opacity-60">Humidity</p>
-                      <p className="font-bold">{MOCK_WEATHER.humidity}%</p>
+                  ) : weatherError ? (
+                    <div className="py-10 text-center">
+                      <p className="text-sm font-bold text-red-100">❌ {weatherError}</p>
                     </div>
-                    <div>
-                      <p className="text-[10px] uppercase font-bold opacity-60">Wind</p>
-                      <p className="font-bold">{MOCK_WEATHER.windSpeed} km/h</p>
+                  ) : weatherData ? (
+                    <>
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h3 className="text-5xl font-black">{weatherData.temp}°C</h3>
+                          <p className="text-lg font-medium opacity-90">{weatherData.condition}</p>
+                        </div>
+                        <CloudSun size={64} className="text-secondary-container" />
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/20">
+                        <div>
+                          <p className="text-[10px] uppercase font-bold opacity-60">Humidity</p>
+                          <p className="font-bold">{weatherData.humidity}%</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold opacity-60">Wind</p>
+                          <p className="font-bold">{weatherData.windSpeed} km/h</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase font-bold opacity-60">UV Index</p>
+                          <p className="font-bold">{weatherData.uvIndex}</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="py-10 text-center">
+                      <p className="text-sm font-bold opacity-70">No weather data available</p>
                     </div>
-                    <div>
-                      <p className="text-[10px] uppercase font-bold opacity-60">UV Index</p>
-                      <p className="font-bold">{MOCK_WEATHER.uvIndex}</p>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -553,6 +642,20 @@ export default function App() {
                     <div className="prose prose-sm max-w-none prose-stone dark:prose-invert">
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
+                    {msg.role === 'assistant' && (
+                      <div className="mt-4 pt-4 border-t border-stone-100">
+                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2">Sources (Google Search)</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button 
+                            onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(msg.content.slice(0, 50))}`, '_blank')}
+                            className="text-[10px] bg-stone-50 text-stone-500 px-2 py-1 rounded border border-stone-100 hover:bg-primary/5 hover:text-primary transition-all flex items-center gap-1"
+                          >
+                            <Search size={10} />
+                            Verify on Google
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <span className="text-[10px] text-stone-400 mt-1 font-medium">
                     {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -615,59 +718,105 @@ export default function App() {
             </header>
 
             <div className="mb-8">
-              <label className="block text-sm font-bold text-stone-500 mb-2 uppercase tracking-wider">Select Location</label>
+              <label className="block text-sm font-bold text-stone-500 mb-2 uppercase tracking-wider">Select State</label>
               <select 
-                value={profileData.location}
+                value={selectedState}
                 onChange={(e) => {
-                  const loc = e.target.value;
-                  if (VALID_LOCATIONS.includes(loc)) {
-                    setProfileData(prev => ({ ...prev, location: loc }));
+                  const state = e.target.value;
+                  setSelectedState(state);
+                  setSelectedDistrict(''); // Reset district when state changes
+                  setProfileData(prev => ({ ...prev, location: `${state}` }));
+                  setLocationError("Please select a valid district");
+                }}
+                className="w-full p-4 bg-white rounded-xl border border-stone-100 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-stone-800 font-medium mb-4"
+              >
+                <option value="">Select State</option>
+                {Object.keys(LOCATION_DATA).map(state => (
+                  <option key={state} value={state}>{state}</option>
+                ))}
+              </select>
+
+              <label className="block text-sm font-bold text-stone-500 mb-2 uppercase tracking-wider">Select District</label>
+              <select 
+                value={selectedDistrict}
+                disabled={!selectedState}
+                onChange={(e) => {
+                  const district = e.target.value;
+                  setSelectedDistrict(district);
+                  if (district) {
+                    setProfileData(prev => ({ ...prev, location: `${district}, ${selectedState}` }));
                     setLocationError(null);
                   } else {
-                    setLocationError("Please select a valid location from the list.");
+                    setLocationError("Please select a valid location");
                   }
                 }}
-                className="w-full p-4 bg-white rounded-xl border border-stone-100 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-stone-800 font-medium"
+                className="w-full p-4 bg-white rounded-xl border border-stone-100 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-stone-800 font-medium disabled:opacity-50"
               >
-                {VALID_LOCATIONS.map(loc => (
-                  <option key={loc} value={loc}>{loc}</option>
+                <option value="">Select District</option>
+                {selectedState && LOCATION_DATA[selectedState].map(dist => (
+                  <option key={dist} value={dist}>{dist}</option>
                 ))}
               </select>
               {locationError && <p className="text-red-500 text-xs mt-2 font-medium">{locationError}</p>}
             </div>
 
             <div className="bg-gradient-to-br from-primary to-primary-container rounded-xl p-8 text-white shadow-xl mb-8">
-              <div className="flex justify-between items-center mb-10">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest opacity-70 mb-1">{profileData.location}</p>
-                  <h3 className="text-4xl font-black">{MOCK_WEATHER.temp}°C</h3>
-                  <p className="text-lg font-medium opacity-90">{MOCK_WEATHER.condition}</p>
+              {isWeatherLoading ? (
+                <div className="py-16 flex flex-col items-center justify-center">
+                  <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mb-4"></div>
+                  <p className="text-lg font-bold">Fetching weather...</p>
                 </div>
-                <CloudSun size={80} className="text-secondary-container" />
-              </div>
-              <div className="grid grid-cols-3 gap-4 pt-8 border-t border-white/20">
-                <div className="text-center">
-                  <Droplets className="mx-auto mb-2 opacity-70" size={20} />
-                  <p className="text-[10px] uppercase font-bold opacity-60">Humidity</p>
-                  <p className="font-bold">{MOCK_WEATHER.humidity}%</p>
+              ) : weatherError ? (
+                <div className="py-16 text-center">
+                  <p className="text-lg font-bold text-red-100">❌ {weatherError}</p>
+                  <p className="text-sm opacity-70 mt-2">Please check your location settings.</p>
                 </div>
-                <div className="text-center">
-                  <Wind className="mx-auto mb-2 opacity-70" size={20} />
-                  <p className="text-[10px] uppercase font-bold opacity-60">Wind</p>
-                  <p className="font-bold">{MOCK_WEATHER.windSpeed} km/h</p>
+              ) : weatherData ? (
+                <>
+                  <div className="flex justify-between items-center mb-10">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-widest opacity-70 mb-1">{profileData.location}</p>
+                      <h3 className="text-4xl font-black">{weatherData.temp}°C</h3>
+                      <p className="text-lg font-medium opacity-90">{weatherData.condition}</p>
+                    </div>
+                    <CloudSun size={80} className="text-secondary-container" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 pt-8 border-t border-white/20 mb-8">
+                    <div className="text-center">
+                      <Droplets className="mx-auto mb-2 opacity-70" size={20} />
+                      <p className="text-[10px] uppercase font-bold opacity-60">Humidity</p>
+                      <p className="font-bold">{weatherData.humidity}%</p>
+                    </div>
+                    <div className="text-center">
+                      <Wind className="mx-auto mb-2 opacity-70" size={20} />
+                      <p className="text-[10px] uppercase font-bold opacity-60">Wind</p>
+                      <p className="font-bold">{weatherData.windSpeed} km/h</p>
+                    </div>
+                    <div className="text-center">
+                      <Sun className="mx-auto mb-2 opacity-70" size={20} />
+                      <p className="text-[10px] uppercase font-bold opacity-60">UV Index</p>
+                      <p className="font-bold">{weatherData.uvIndex}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => window.open(`https://www.google.com/maps/search/${encodeURIComponent(profileData.location)}`, '_blank')}
+                    className="w-full py-3 bg-white/10 hover:bg-white/20 rounded-xl border border-white/20 text-xs font-bold flex items-center justify-center gap-2 transition-all"
+                  >
+                    <Globe size={14} />
+                    View on Google Maps
+                  </button>
+                </>
+              ) : (
+                <div className="py-16 text-center">
+                  <p className="text-lg font-bold opacity-70">No weather data available</p>
                 </div>
-                <div className="text-center">
-                  <Sun className="mx-auto mb-2 opacity-70" size={20} />
-                  <p className="text-[10px] uppercase font-bold opacity-60">UV Index</p>
-                  <p className="font-bold">{MOCK_WEATHER.uvIndex}</p>
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="mb-8">
               <h3 className="text-lg font-bold text-stone-800 mb-4">Hourly Forecast</h3>
               <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-                {MOCK_WEATHER.hourly.map((h, i) => (
+                {(weatherData?.hourly || MOCK_WEATHER.hourly).map((h, i) => (
                   <div key={i} className="flex-shrink-0 bg-white p-4 rounded-xl border border-stone-100 shadow-sm flex flex-col items-center min-w-[80px]">
                     <span className="text-xs font-bold text-stone-400 mb-2">{h.time}</span>
                     <div className="text-primary mb-2">
@@ -681,7 +830,7 @@ export default function App() {
 
             <div className="space-y-4">
               <h3 className="text-lg font-bold text-stone-800 mb-4">3-Day Forecast</h3>
-              {MOCK_WEATHER.forecast.map((f, i) => (
+              {(weatherData?.forecast || MOCK_WEATHER.forecast).map((f, i) => (
                 <div key={i} className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center text-primary">
@@ -702,7 +851,14 @@ export default function App() {
           </div>
         );
       case 'schemes':
-        const filteredSchemes = SCHEMES.filter(s => 
+        const handleFindOffices = async () => {
+    setIsLoadingOffices(true);
+    const offices = await findNearbyAgriOffices(profileData.location, language);
+    setNearbyOffices(offices);
+    setIsLoadingOffices(false);
+  };
+
+  const filteredSchemes = SCHEMES.filter(s => 
           s.title.toLowerCase().includes(schemeSearchQuery.toLowerCase()) || 
           s.desc.toLowerCase().includes(schemeSearchQuery.toLowerCase())
         );
@@ -726,6 +882,39 @@ export default function App() {
                 placeholder="Search schemes..."
                 className="w-full pl-12 pr-6 py-4 bg-white rounded-xl border border-stone-100 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
               />
+            </div>
+
+            <div className="mb-8">
+              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary">
+                    <MapPin size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-stone-800">Local Support</h3>
+                    <p className="text-xs text-stone-400">Find nearby agricultural offices</p>
+                  </div>
+                </div>
+                
+                {nearbyOffices ? (
+                  <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 mb-4">
+                    <div className="prose prose-sm prose-stone max-w-none">
+                      <ReactMarkdown>{nearbyOffices}</ReactMarkdown>
+                    </div>
+                  </div>
+                ) : null}
+
+                <button 
+                  onClick={handleFindOffices}
+                  disabled={isLoadingOffices}
+                  className="w-full py-3 bg-primary text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary-container transition-all disabled:opacity-50"
+                >
+                  {isLoadingOffices ? (
+                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                  ) : <Search size={16} />}
+                  {nearbyOffices ? "Refresh Nearby Offices" : "Find Nearby Agri Offices"}
+                </button>
+              </div>
             </div>
 
             <div className="space-y-6">
@@ -1010,12 +1199,43 @@ export default function App() {
                   {!isEditingProfile && <span className="text-sm font-bold text-primary">{profileData.location}</span>}
                 </div>
                 {isEditingProfile && (
-                  <input 
-                    type="text" 
-                    value={profileData.location}
-                    onChange={(e) => setProfileData({...profileData, location: e.target.value})}
-                    className="w-full mt-2 p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                  />
+                  <div className="space-y-3 mt-4">
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-stone-400 mb-1 block">State</label>
+                      <select 
+                        value={selectedState}
+                        onChange={(e) => {
+                          setSelectedState(e.target.value);
+                          setSelectedDistrict('');
+                          setLocationError("Please select a valid location");
+                        }}
+                        className="w-full p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                      >
+                        <option value="">Select State</option>
+                        {Object.keys(LOCATION_DATA).map(state => (
+                          <option key={state} value={state}>{state}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-stone-400 mb-1 block">District</label>
+                      <select 
+                        value={selectedDistrict}
+                        disabled={!selectedState}
+                        onChange={(e) => {
+                          setSelectedDistrict(e.target.value);
+                          if (e.target.value) setLocationError(null);
+                        }}
+                        className="w-full p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none disabled:opacity-50"
+                      >
+                        <option value="">Select District</option>
+                        {selectedState && LOCATION_DATA[selectedState].map(dist => (
+                          <option key={dist} value={dist}>{dist}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {locationError && <p className="text-red-500 text-[10px] font-medium">{locationError}</p>}
+                  </div>
                 )}
               </div>
 
@@ -1025,44 +1245,52 @@ export default function App() {
                     <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
                       <Leaf size={20} />
                     </div>
-                    <span className="font-bold text-stone-700">Primary Crops</span>
+                    <span className="font-bold text-stone-700">Primary Crop</span>
                   </div>
                   {!isEditingProfile && <span className="text-sm font-bold text-stone-400">{profileData.crops}</span>}
                 </div>
                 {isEditingProfile && (
-                  <input 
-                    type="text" 
-                    value={profileData.crops}
-                    onChange={(e) => setProfileData({...profileData, crops: e.target.value})}
-                    className="w-full mt-2 p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                  />
-                )}
-              </div>
-
-              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
-                      <History size={20} />
-                    </div>
-                    <span className="font-bold text-stone-700">Experience</span>
+                  <div className="mt-4">
+                    <label className="text-[10px] uppercase font-bold text-stone-400 mb-1 block">Crop</label>
+                    <select 
+                      value={selectedCrop}
+                      onChange={(e) => {
+                        setSelectedCrop(e.target.value);
+                        if (e.target.value) setCropError(null);
+                        else setCropError("Please select a valid crop");
+                      }}
+                      className="w-full p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                    >
+                      <option value="">Select Crop</option>
+                      {VALID_CROPS.map(crop => (
+                        <option key={crop} value={crop}>{crop}</option>
+                      ))}
+                    </select>
+                    {cropError && <p className="text-red-500 text-[10px] font-medium mt-1">{cropError}</p>}
                   </div>
-                  {!isEditingProfile && <span className="text-sm font-bold text-stone-400">{profileData.experience}</span>}
-                </div>
-                {isEditingProfile && (
-                  <input 
-                    type="text" 
-                    value={profileData.experience}
-                    onChange={(e) => setProfileData({...profileData, experience: e.target.value})}
-                    className="w-full mt-2 p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                  />
                 )}
               </div>
 
               {isEditingProfile && (
                 <button 
-                  onClick={() => setIsEditingProfile(false)}
-                  className="w-full py-4 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                  onClick={() => {
+                    if (!selectedState || !selectedDistrict) {
+                      setLocationError("Please select a valid location");
+                      return;
+                    }
+                    if (!selectedCrop) {
+                      setCropError("Please select a valid crop");
+                      return;
+                    }
+                    setProfileData({
+                      ...profileData,
+                      location: `${selectedDistrict}, ${selectedState}`,
+                      crops: selectedCrop
+                    });
+                    setIsEditingProfile(false);
+                  }}
+                  disabled={!!locationError || !!cropError || !selectedState || !selectedDistrict || !selectedCrop}
+                  className="w-full py-4 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
                 >
                   <Save size={20} />
                   Save Changes
