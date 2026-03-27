@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Document ID: userId (matches request.auth.uid)
+    // Fields:
+    //   - uid: string (required) - Unique identifier for the user.
+    //   - name: string (required, 1-100 chars) - Name of the farmer.
+    //   - location: string (required, 1-200 chars) - Location of the farm.
+    //   - crops: string (required, 1-200 chars) - Primary crops grown.
+    //   - farmSize: string (optional, 0-100 chars) - Size of the farm.
+    //   - farmUnit: string (optional) - Unit of measurement for the farm size.
+    //   - soilType: string (optional, 0-100 chars) - Type of soil.
+    //   - updatedAt: timestamp (required) - Timestamp of the last update.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+             request.resource.data[field].size() >= minLen &&
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'name', 'location', 'crops', 'updatedAt']) &&
+             data.keys().hasOnly(['uid', 'name', 'location', 'crops', 'farmSize', 'farmUnit', 'soilType', 'updatedAt']) &&
+             data.uid == request.auth.uid &&
+             isValidStringLength('name', 1, 100) &&
+             isValidStringLength('location', 1, 200) &&
+             isValidStringLength('crops', 1, 200) &&
+             isValidOptionalString('farmSize', 0, 100) &&
+             (!( 'farmUnit' in data) || data.farmUnit in ['Acres', 'Hectares', 'Bigha', 'Kanal']) &&
+             isValidOptionalString('soilType', 0, 100) &&
+             data.updatedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

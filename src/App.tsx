@@ -22,7 +22,8 @@ import {
   Edit2,
   Save,
   X,
-  History
+  History,
+  Maximize
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -207,12 +208,17 @@ export default function App() {
   const [profileData, setProfileData] = useState({
     name: 'Harish Kumar',
     location: 'Chennai, Tamil Nadu',
-    crops: 'Paddy'
+    crops: 'Paddy',
+    farmSize: '5',
+    farmUnit: 'Acres'
   });
 
   const [selectedState, setSelectedState] = useState('Tamil Nadu');
   const [selectedDistrict, setSelectedDistrict] = useState('Chennai');
   const [selectedCrop, setSelectedCrop] = useState('Paddy');
+  const [selectedName, setSelectedName] = useState('Harish Kumar');
+  const [selectedFarmSize, setSelectedFarmSize] = useState('5');
+  const [selectedFarmUnit, setSelectedFarmUnit] = useState('Acres');
   const [cropError, setCropError] = useState<string | null>(null);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1113,7 +1119,19 @@ export default function App() {
               <div className="w-24 h-24 rounded-full bg-surface-container mx-auto mb-6 border-4 border-white shadow-md overflow-hidden">
                 <img src="https://picsum.photos/seed/farmer/200/200" alt="Profile" referrerPolicy="no-referrer" />
               </div>
-              <h2 className="text-2xl font-bold text-stone-800">{profileData.name}</h2>
+              {isEditingProfile ? (
+                <div className="max-w-[200px] mx-auto mb-2">
+                  <input 
+                    type="text" 
+                    value={selectedName}
+                    onChange={(e) => setSelectedName(e.target.value)}
+                    className="w-full p-2 bg-white rounded-lg border border-stone-100 text-center font-bold text-xl focus:ring-2 focus:ring-primary/20 outline-none"
+                    placeholder="Enter your name"
+                  />
+                </div>
+              ) : (
+                <h2 className="text-2xl font-bold text-stone-800">{profileData.name}</h2>
+              )}
               <p className="text-stone-400 font-medium">Farmer ID: #AS-9921</p>
             </header>
 
@@ -1201,6 +1219,45 @@ export default function App() {
                 )}
               </div>
 
+              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
+                      <Maximize size={20} />
+                    </div>
+                    <span className="font-bold text-stone-700">Farm Size</span>
+                  </div>
+                  {!isEditingProfile && <span className="text-sm font-bold text-stone-400">{profileData.farmSize} {profileData.farmUnit}</span>}
+                </div>
+                {isEditingProfile && (
+                  <div className="mt-4 flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-[10px] uppercase font-bold text-stone-400 mb-1 block">Size</label>
+                      <input 
+                        type="number" 
+                        value={selectedFarmSize}
+                        onChange={(e) => setSelectedFarmSize(e.target.value)}
+                        className="w-full p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                        placeholder="Enter size"
+                      />
+                    </div>
+                    <div className="w-1/3">
+                      <label className="text-[10px] uppercase font-bold text-stone-400 mb-1 block">Unit</label>
+                      <select 
+                        value={selectedFarmUnit}
+                        onChange={(e) => setSelectedFarmUnit(e.target.value)}
+                        className="w-full p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                      >
+                        <option value="Acres">Acres</option>
+                        <option value="Hectares">Hectares</option>
+                        <option value="Bigha">Bigha</option>
+                        <option value="Gunta">Gunta</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {isEditingProfile && (
                 <button 
                   onClick={() => {
@@ -1212,14 +1269,21 @@ export default function App() {
                       setCropError("Please select a valid crop");
                       return;
                     }
+                    if (!selectedName.trim()) {
+                      alert("Please enter a valid name");
+                      return;
+                    }
                     setProfileData({
                       ...profileData,
+                      name: selectedName,
                       location: `${selectedDistrict}, ${selectedState}`,
-                      crops: selectedCrop
+                      crops: selectedCrop,
+                      farmSize: selectedFarmSize,
+                      farmUnit: selectedFarmUnit
                     });
                     setIsEditingProfile(false);
                   }}
-                  disabled={!!locationError || !!cropError || !selectedState || !selectedDistrict || !selectedCrop}
+                  disabled={!!locationError || !!cropError || !selectedState || !selectedDistrict || !selectedCrop || !selectedFarmSize || !selectedName.trim()}
                   className="w-full py-4 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
                 >
                   <Save size={20} />
