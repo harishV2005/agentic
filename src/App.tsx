@@ -23,7 +23,8 @@ import {
   Save,
   X,
   History,
-  Maximize
+  Maximize,
+  MapPin
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -38,7 +39,7 @@ import {
 } from 'recharts';
 import { cn } from './lib/utils';
 import { Screen, Language, Message, WeatherData } from './types';
-import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvice } from './services/gemini';
+import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvice, findNearbyAgriOffices } from './services/gemini';
 import { 
   auth, 
   db, 
@@ -115,7 +116,11 @@ const LOCATION_DATA: Record<string, string[]> = {
   'Delhi': ['New Delhi', 'North Delhi', 'South Delhi']
 };
 
-const VALID_CROPS = ['Paddy', 'Wheat', 'Sugarcane', 'Cotton', 'Maize','Millet', 'Tomato', 'Chilly'];
+const VALID_CROPS = [
+  'Paddy', 'Wheat', 'Sugarcane', 'Cotton', 'Maize', 'Millet', 
+  'Tomato', 'Chilly', 'Onion', 'Potato', 'Soybean', 'Groundnut', 
+  'Mustard', 'Jute', 'Coffee', 'Tea', 'Coconut', 'Banana', 'Mango'
+];
 
 const MOCK_WEATHER: WeatherData = {
   temp: 32,
@@ -340,6 +345,8 @@ export default function App() {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [isWeatherLoading, setIsWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [isFindingOffices, setIsFindingOffices] = useState(false);
+  const [nearbyOffices, setNearbyOffices] = useState<string | null>(null);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [profileData, setProfileData] = useState({
@@ -578,6 +585,20 @@ export default function App() {
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (file) processFile(file);
+  };
+
+  const handleFindOffices = async () => {
+    setIsFindingOffices(true);
+    setNearbyOffices(null);
+    try {
+      const result = await findNearbyAgriOffices(profileData.location, language);
+      setNearbyOffices(result);
+    } catch (error) {
+      console.error("Error finding offices:", error);
+      setNearbyOffices("Unable to find nearby offices at this time.");
+    } finally {
+      setIsFindingOffices(false);
+    }
   };
 
   const handleConsultAI = async () => {
@@ -1462,6 +1483,41 @@ export default function App() {
                   </div>
                 )}
               </div>
+
+              {!isEditingProfile && (
+                <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center text-blue-600">
+                        <MapPin size={20} />
+                      </div>
+                      <span className="font-bold text-stone-700">Agri Offices</span>
+                    </div>
+                    <button 
+                      onClick={handleFindOffices}
+                      disabled={isFindingOffices}
+                      className="text-xs font-bold text-primary hover:underline disabled:opacity-50"
+                    >
+                      {isFindingOffices ? 'Searching...' : 'Find Nearby'}
+                    </button>
+                  </div>
+                  
+                  {isFindingOffices && (
+                    <div className="flex flex-col items-center py-4">
+                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mb-2" />
+                      <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest">Locating Offices...</p>
+                    </div>
+                  )}
+
+                  {nearbyOffices && (
+                    <div className="mt-2 p-4 bg-stone-50 rounded-xl border border-stone-100">
+                      <div className="prose prose-sm prose-stone max-w-none">
+                        <ReactMarkdown>{nearbyOffices}</ReactMarkdown>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {isEditingProfile && (
                 <button 
