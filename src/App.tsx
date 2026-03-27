@@ -17,14 +17,41 @@ import {
   CheckCircle2,
   Leaf,
   Mic,
-  MicOff
+  MicOff,
+  Search,
+  Edit2,
+  Save,
+  X,
+  History
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  Cell
+} from 'recharts';
 import { cn } from './lib/utils';
 import { Screen, Language, Message, WeatherData } from './types';
-import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility } from './services/gemini';
+import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvice } from './services/gemini';
 
 // --- Mock Data ---
+const VALID_LOCATIONS = [
+  'Tamil Nadu',
+  'Maharashtra',
+  'Punjab',
+  'Karnataka',
+  'Andhra Pradesh',
+  'Uttar Pradesh',
+  'Gujarat',
+  'Rajasthan',
+  'Madhya Pradesh',
+  'West Bengal'
+];
 const MOCK_WEATHER: WeatherData = {
   temp: 32,
   condition: "Partly Cloudy",
@@ -35,8 +62,28 @@ const MOCK_WEATHER: WeatherData = {
     { day: "Tomorrow", tempHigh: 34, tempLow: 22, condition: "Sunny" },
     { day: "Wednesday", tempHigh: 31, tempLow: 20, condition: "Cloudy" },
     { day: "Thursday", tempHigh: 28, tempLow: 19, condition: "Rainy" },
+  ],
+  hourly: [
+    { time: "Now", temp: 32, condition: "Sunny" },
+    { time: "1 PM", temp: 33, condition: "Sunny" },
+    { time: "2 PM", temp: 34, condition: "Sunny" },
+    { time: "3 PM", temp: 34, condition: "Sunny" },
+    { time: "4 PM", temp: 33, condition: "Cloudy" },
+    { time: "5 PM", temp: 31, condition: "Cloudy" },
+    { time: "6 PM", temp: 29, condition: "Partly Cloudy" },
+    { time: "7 PM", temp: 27, condition: "Clear" },
+    { time: "8 PM", temp: 26, condition: "Clear" },
   ]
 };
+
+const MARKET_TRENDS = [
+  { month: 'Jan', price: 2100 },
+  { month: 'Feb', price: 2150 },
+  { month: 'Mar', price: 2183 },
+  { month: 'Apr', price: 2250 },
+  { month: 'May', price: 2300 },
+  { month: 'Jun', price: 2450 },
+];
 
 const SCHEMES = [
   { id: 1, title: "PM-KISAN", desc: "Direct income support of ₹6,000 per year to all landholding farmer families." },
@@ -149,6 +196,17 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [checkingSchemeId, setCheckingSchemeId] = useState<number | null>(null);
   const [eligibilityResults, setEligibilityResults] = useState<Record<number, string>>({});
+  const [schemeSearchQuery, setSchemeSearchQuery] = useState('');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [weatherAdvice, setWeatherAdvice] = useState<string>('');
+  const [isLoadingWeatherAdvice, setIsLoadingWeatherAdvice] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [profileData, setProfileData] = useState({
+    name: 'Harish Kumar',
+    location: 'Tamil Nadu',
+    crops: 'Paddy, Tomato',
+    experience: '12 Years'
+  });
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -177,6 +235,19 @@ export default function App() {
       recognitionRef.current.onend = () => setIsListening(false);
     }
   }, [language]);
+
+  // Fetch weather advice when location or language changes
+  useEffect(() => {
+    const fetchWeatherAdvice = async () => {
+      if (screen === 'weather' || screen === 'home') {
+        setIsLoadingWeatherAdvice(true);
+        const advice = await getWeatherAdvice(profileData.location, language, profileData.crops);
+        setWeatherAdvice(advice);
+        setIsLoadingWeatherAdvice(false);
+      }
+    };
+    fetchWeatherAdvice();
+  }, [profileData.location, language, screen]);
 
   const toggleListening = () => {
     if (isListening) {
@@ -259,7 +330,12 @@ export default function App() {
     }]);
     
     setIsTyping(true);
-    const response = await getAgriAdvice(`The user scanned a ${scanResult.crop} and detected ${scanResult.disease}. Provide a detailed treatment plan.`, language);
+    const response = await getAgriAdvice(
+      `The user scanned a ${scanResult.crop} and detected ${scanResult.disease}. Provide a detailed treatment plan.`, 
+      language,
+      profileData.location,
+      profileData.crops
+    );
     setMessages(prev => [...prev, {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
@@ -283,7 +359,7 @@ export default function App() {
     setInput('');
     setIsTyping(true);
 
-    const response = await getAgriAdvice(input, language);
+    const response = await getAgriAdvice(input, language, profileData.location, profileData.crops);
     
     const aiMsg: Message = {
       id: (Date.now() + 1).toString(),
@@ -300,7 +376,7 @@ export default function App() {
     setCheckingSchemeId(schemeId);
     
     // AI-based eligibility check
-    const result = await checkSchemeEligibility(schemeTitle, language);
+    const result = await checkSchemeEligibility(schemeTitle, language, profileData.location, profileData.crops);
     
     setEligibilityResults(prev => ({
       ...prev,
@@ -321,7 +397,7 @@ export default function App() {
             <header className="flex justify-between items-center mb-10">
               <div>
                 <h1 className="text-3xl font-extrabold text-primary italic">AgriSeva AI</h1>
-                <p className="text-stone-400 font-medium">Tamil Nadu • Paddy • Summer</p>
+                <p className="text-stone-400 font-medium">{profileData.location} • {profileData.crops} • Summer</p>
               </div>
               <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
                 <img src="https://picsum.photos/seed/farmer/100/100" alt="Profile" referrerPolicy="no-referrer" />
@@ -354,6 +430,29 @@ export default function App() {
                       <p className="font-bold">{MOCK_WEATHER.uvIndex}</p>
                     </div>
                   </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="mb-10">
+              <h2 className="text-xl font-bold mb-6 text-stone-800">Weather Advice</h2>
+              <div className="bg-secondary-container rounded-xl p-6 flex gap-4 items-start shadow-sm">
+                <div className="bg-white rounded-full p-2 text-primary shrink-0">
+                  <CloudSun size={20} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-on-secondary-container mb-1">AI Weather Expert</h4>
+                  {isLoadingWeatherAdvice ? (
+                    <div className="flex gap-1 py-2">
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-on-secondary-container opacity-90 leading-relaxed">
+                      {weatherAdvice || "Select a location to get personalized weather advice."}
+                    </p>
+                  )}
                 </div>
               </div>
             </section>
@@ -515,10 +614,32 @@ export default function App() {
               <h2 className="text-2xl font-bold text-stone-800">Weather Insights</h2>
             </header>
 
+            <div className="mb-8">
+              <label className="block text-sm font-bold text-stone-500 mb-2 uppercase tracking-wider">Select Location</label>
+              <select 
+                value={profileData.location}
+                onChange={(e) => {
+                  const loc = e.target.value;
+                  if (VALID_LOCATIONS.includes(loc)) {
+                    setProfileData(prev => ({ ...prev, location: loc }));
+                    setLocationError(null);
+                  } else {
+                    setLocationError("Please select a valid location from the list.");
+                  }
+                }}
+                className="w-full p-4 bg-white rounded-xl border border-stone-100 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-stone-800 font-medium"
+              >
+                {VALID_LOCATIONS.map(loc => (
+                  <option key={loc} value={loc}>{loc}</option>
+                ))}
+              </select>
+              {locationError && <p className="text-red-500 text-xs mt-2 font-medium">{locationError}</p>}
+            </div>
+
             <div className="bg-gradient-to-br from-primary to-primary-container rounded-xl p-8 text-white shadow-xl mb-8">
               <div className="flex justify-between items-center mb-10">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-widest opacity-70 mb-1">Nashik, Maharashtra</p>
+                  <p className="text-xs font-bold uppercase tracking-widest opacity-70 mb-1">{profileData.location}</p>
                   <h3 className="text-4xl font-black">{MOCK_WEATHER.temp}°C</h3>
                   <p className="text-lg font-medium opacity-90">{MOCK_WEATHER.condition}</p>
                 </div>
@@ -540,6 +661,21 @@ export default function App() {
                   <p className="text-[10px] uppercase font-bold opacity-60">UV Index</p>
                   <p className="font-bold">{MOCK_WEATHER.uvIndex}</p>
                 </div>
+              </div>
+            </div>
+
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-stone-800 mb-4">Hourly Forecast</h3>
+              <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+                {MOCK_WEATHER.hourly.map((h, i) => (
+                  <div key={i} className="flex-shrink-0 bg-white p-4 rounded-xl border border-stone-100 shadow-sm flex flex-col items-center min-w-[80px]">
+                    <span className="text-xs font-bold text-stone-400 mb-2">{h.time}</span>
+                    <div className="text-primary mb-2">
+                      {h.condition === 'Sunny' ? <Sun size={20} /> : h.condition === 'Clear' ? <Sun size={20} /> : <CloudSun size={20} />}
+                    </div>
+                    <span className="font-black text-stone-800">{h.temp}°</span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -566,6 +702,10 @@ export default function App() {
           </div>
         );
       case 'schemes':
+        const filteredSchemes = SCHEMES.filter(s => 
+          s.title.toLowerCase().includes(schemeSearchQuery.toLowerCase()) || 
+          s.desc.toLowerCase().includes(schemeSearchQuery.toLowerCase())
+        );
         return (
           <div className="pb-32 px-6 pt-12">
             <header className="flex items-center gap-4 mb-10">
@@ -575,8 +715,21 @@ export default function App() {
               <h2 className="text-2xl font-bold text-stone-800">Govt Schemes</h2>
             </header>
 
+            <div className="mb-8 relative">
+              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                <Search size={20} className="text-stone-400" />
+              </div>
+              <input 
+                type="text" 
+                value={schemeSearchQuery}
+                onChange={(e) => setSchemeSearchQuery(e.target.value)}
+                placeholder="Search schemes..."
+                className="w-full pl-12 pr-6 py-4 bg-white rounded-xl border border-stone-100 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+              />
+            </div>
+
             <div className="space-y-6">
-              {SCHEMES.map((scheme) => (
+              {filteredSchemes.map((scheme) => (
                 <div key={scheme.id} className="bg-white p-8 rounded-xl border border-stone-100 shadow-sm relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-24 h-24 bg-green-50 rounded-full -translate-y-1/2 translate-x-1/2"></div>
                   <h3 className="text-xl font-bold text-primary mb-3 relative z-10">{scheme.title}</h3>
@@ -626,6 +779,41 @@ export default function App() {
               </button>
               <h2 className="text-2xl font-bold text-stone-800">Market Prices</h2>
             </header>
+
+            <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm mb-8">
+              <div className="flex items-center gap-2 mb-6">
+                <History size={20} className="text-primary" />
+                <h3 className="font-bold text-stone-800">Price Trends (Paddy)</h3>
+              </div>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={MARKET_TRENDS}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                    <XAxis 
+                      dataKey="month" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 12, fill: '#9ca3af' }} 
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 12, fill: '#9ca3af' }}
+                      domain={['dataMin - 100', 'dataMax + 100']}
+                    />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                      cursor={{ fill: '#f9fafb' }}
+                    />
+                    <Bar dataKey="price" radius={[4, 4, 0, 0]}>
+                      {MARKET_TRENDS.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={index === MARKET_TRENDS.length - 1 ? '#166534' : '#86efac'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
 
             <div className="bg-white rounded-xl border border-stone-100 shadow-sm overflow-hidden mb-8">
               <div className="p-6 bg-green-50 border-b border-stone-100">
@@ -796,45 +984,90 @@ export default function App() {
       case 'profile':
         return (
           <div className="pb-32 px-6 pt-12">
-            <header className="text-center mb-12">
+            <header className="text-center mb-12 relative">
+              <button 
+                onClick={() => setIsEditingProfile(!isEditingProfile)}
+                className="absolute top-0 right-0 p-2 bg-white rounded-full shadow-sm border border-stone-100 text-primary hover:bg-primary hover:text-white transition-all"
+              >
+                {isEditingProfile ? <X size={20} /> : <Edit2 size={20} />}
+              </button>
               <div className="w-24 h-24 rounded-full bg-surface-container mx-auto mb-6 border-4 border-white shadow-md overflow-hidden">
                 <img src="https://picsum.photos/seed/farmer/200/200" alt="Profile" referrerPolicy="no-referrer" />
               </div>
-              <h2 className="text-2xl font-bold text-stone-800">Harish Kumar</h2>
+              <h2 className="text-2xl font-bold text-stone-800">{profileData.name}</h2>
               <p className="text-stone-400 font-medium">Farmer ID: #AS-9921</p>
             </header>
 
             <div className="space-y-4">
-              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
-                    <Globe size={20} />
+              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
+                      <Globe size={20} />
+                    </div>
+                    <span className="font-bold text-stone-700">Location</span>
                   </div>
-                  <span className="font-bold text-stone-700">Language</span>
+                  {!isEditingProfile && <span className="text-sm font-bold text-primary">{profileData.location}</span>}
                 </div>
-                <span className="text-sm font-bold text-primary">{language === 'en' ? 'English' : language === 'hi' ? 'हिन्दी' : 'தமிழ்'}</span>
+                {isEditingProfile && (
+                  <input 
+                    type="text" 
+                    value={profileData.location}
+                    onChange={(e) => setProfileData({...profileData, location: e.target.value})}
+                    className="w-full mt-2 p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                  />
+                )}
               </div>
-              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
-                    <Leaf size={20} />
+
+              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
+                      <Leaf size={20} />
+                    </div>
+                    <span className="font-bold text-stone-700">Primary Crops</span>
                   </div>
-                  <span className="font-bold text-stone-700">My Crops</span>
+                  {!isEditingProfile && <span className="text-sm font-bold text-stone-400">{profileData.crops}</span>}
                 </div>
-                <span className="text-sm font-bold text-stone-400">Paddy, Tomato</span>
+                {isEditingProfile && (
+                  <input 
+                    type="text" 
+                    value={profileData.crops}
+                    onChange={(e) => setProfileData({...profileData, crops: e.target.value})}
+                    className="w-full mt-2 p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                  />
+                )}
               </div>
-              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
-                    <CheckCircle2 size={20} />
+
+              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center text-primary">
+                      <History size={20} />
+                    </div>
+                    <span className="font-bold text-stone-700">Experience</span>
                   </div>
-                  <span className="font-bold text-stone-700">Verified Badges</span>
+                  {!isEditingProfile && <span className="text-sm font-bold text-stone-400">{profileData.experience}</span>}
                 </div>
-                <div className="flex gap-1">
-                  <div className="w-6 h-6 bg-yellow-400 rounded-full"></div>
-                  <div className="w-6 h-6 bg-blue-400 rounded-full"></div>
-                </div>
+                {isEditingProfile && (
+                  <input 
+                    type="text" 
+                    value={profileData.experience}
+                    onChange={(e) => setProfileData({...profileData, experience: e.target.value})}
+                    className="w-full mt-2 p-3 bg-stone-50 rounded-lg border border-stone-100 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                  />
+                )}
               </div>
+
+              {isEditingProfile && (
+                <button 
+                  onClick={() => setIsEditingProfile(false)}
+                  className="w-full py-4 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <Save size={20} />
+                  Save Changes
+                </button>
+              )}
             </div>
 
             <button 

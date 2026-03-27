@@ -30,4 +30,9 @@ export interface WeatherData {
     tempLow: number;
     condition: string;
   }[];
+  hourly: {
+    time: string;
+    temp: number;
+    condition: string;
+  }[];
 }

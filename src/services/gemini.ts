@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const getSystemInstruction = (lang: string) => {
+const getSystemInstruction = (lang: string, location: string = 'Tamil Nadu', crop: string = 'Paddy') => {
   const langMap: Record<string, string> = {
     'en': 'English',
     'hi': 'Hindi',
@@ -16,8 +16,8 @@ STRICT REQUIREMENT: You MUST respond ONLY in ${targetLang}.
 Even if the user query is in another language, your response must be in ${targetLang}.
 
 CONTEXT:
-- Location: Tamil Nadu
-- Primary Crop: Paddy
+- Location: ${location}
+- Primary Crop: ${crop}
 - Season: Summer
 
 AGENTS:
@@ -82,7 +82,7 @@ export async function analyzeCropImage(base64Image: string, lang: string = 'en')
   }
 }
 
-export async function checkSchemeEligibility(schemeName: string, lang: string = 'en') {
+export async function checkSchemeEligibility(schemeName: string, lang: string = 'en', location: string = 'Tamil Nadu', crop: string = 'Paddy') {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return "AI Eligibility check is currently unavailable. Please try again later.";
 
@@ -90,7 +90,7 @@ export async function checkSchemeEligibility(schemeName: string, lang: string = 
   
   const prompt = `
     Act as an Indian Government Agriculture Expert. 
-    Check eligibility for the scheme: "${schemeName}" for a smallholder farmer in Tamil Nadu growing Paddy.
+    Check eligibility for the scheme: "${schemeName}" for a smallholder farmer in ${location} growing ${crop}.
     
     Provide a concise response (max 3 sentences) covering:
     1. Primary eligibility criteria.
@@ -113,7 +113,38 @@ export async function checkSchemeEligibility(schemeName: string, lang: string = 
   }
 }
 
-export async function getAgriAdvice(prompt: string, lang: string = 'en') {
+export async function getWeatherAdvice(location: string, lang: string = 'en', crop: string = 'Paddy') {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return "Weather advice is currently unavailable.";
+
+  const ai = new GoogleGenAI({ apiKey });
+  
+  const prompt = `
+    Act as an Agricultural Weather Expert. 
+    Provide weather-based farming advice for a farmer in ${location} growing ${crop}.
+    
+    Provide a concise response (max 4 sentences) covering:
+    1. Current seasonal weather risks in ${location}.
+    2. Irrigation or pesticide application advice based on typical weather.
+    3. One specific action for the next 48 hours.
+    
+    Respond strictly in ${lang === 'ta' ? 'Tamil' : lang === 'hi' ? 'Hindi' : 'English'}.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+    });
+
+    return response.text || "Unable to fetch weather advice.";
+  } catch (error) {
+    console.error("Weather Advice Error:", error);
+    return "Error fetching weather advice.";
+  }
+}
+
+export async function getAgriAdvice(prompt: string, lang: string = 'en', location: string = 'Tamil Nadu', crop: string = 'Paddy') {
   const apiKey = process.env.GEMINI_API_KEY;
   
   if (!apiKey) {
@@ -129,7 +160,7 @@ export async function getAgriAdvice(prompt: string, lang: string = 'en') {
       model: "gemini-3-flash-preview",
       contents: prompt,
       config: {
-        systemInstruction: getSystemInstruction(lang),
+        systemInstruction: getSystemInstruction(lang, location, crop),
         temperature: 0.7,
       },
     });
