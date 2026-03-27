@@ -3,6 +3,7 @@ export type Language = 'en' | 'hi' | 'ta';
 export type Screen = 
   | 'splash' 
   | 'onboarding' 
+  | 'login'
   | 'home' 
   | 'chat' 
   | 'weather' 

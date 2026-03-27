@@ -39,6 +39,70 @@ import {
 import { cn } from './lib/utils';
 import { Screen, Language, Message, WeatherData } from './types';
 import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvice } from './services/gemini';
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  doc, 
+  setDoc, 
+  onSnapshot, 
+  serverTimestamp,
+  User as FirebaseUser
+} from './firebase';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // --- Mock Data ---
 const LOCATION_DATA: Record<string, string[]> = {
@@ -94,11 +158,19 @@ const SCHEMES = [
 
 // --- Components ---
 
-const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
+const SplashScreen = ({ onComplete, isReady }: { onComplete: () => void, isReady: boolean }) => {
+  const [timerDone, setTimerDone] = useState(false);
+
   useEffect(() => {
-    const timer = setTimeout(onComplete, 2500);
+    const timer = setTimeout(() => setTimerDone(true), 2000);
     return () => clearTimeout(timer);
-  }, [onComplete]);
+  }, []);
+
+  useEffect(() => {
+    if (timerDone && isReady) {
+      onComplete();
+    }
+  }, [timerDone, isReady, onComplete]);
 
   return (
     <div className="fixed inset-0 bg-primary flex flex-col items-center justify-center text-white">
@@ -143,6 +215,69 @@ const Onboarding = ({ onSelect }: { onSelect: (lang: Language) => void }) => {
             <Globe className="text-stone-300 group-hover:text-primary" />
           </button>
         ))}
+      </div>
+    </div>
+  );
+};
+
+const LoginScreen = ({ onLoginSuccess }: { onLoginSuccess: () => void }) => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async () => {
+    setIsLoading(true);
+    try {
+      await signInWithPopup(auth, googleProvider);
+      onLoginSuccess();
+    } catch (error) {
+      console.error("Login failed:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#fdfdfb] p-8 flex flex-col items-center justify-between py-24">
+      <div className="flex flex-col items-center text-center">
+        <motion.div 
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="w-24 h-24 bg-white rounded-[2.5rem] flex items-center justify-center mb-8 shadow-sm border border-stone-100"
+        >
+          <Sprout className="text-primary w-12 h-12" />
+        </motion.div>
+        <h2 className="text-4xl font-serif italic text-stone-900 mb-4">AgriSeva AI</h2>
+        <p className="text-stone-500 max-w-[280px] leading-relaxed font-medium">
+          Your intelligent companion for modern farming. Join our community of successful farmers.
+        </p>
+      </div>
+
+      <div className="w-full max-w-xs space-y-6">
+        <button
+          onClick={handleLogin}
+          disabled={isLoading}
+          className="w-full p-5 bg-stone-900 text-white rounded-2xl shadow-xl flex items-center justify-center gap-4 hover:bg-stone-800 transition-all active:scale-[0.98] disabled:opacity-50 font-bold"
+        >
+          {isLoading ? (
+            <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <>
+              <div className="bg-white p-1 rounded-full">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+              </div>
+              Continue with Google
+            </>
+          )}
+        </button>
+        
+        <div className="space-y-2">
+          <p className="text-[11px] text-stone-400 text-center px-6 leading-tight">
+            By continuing, you agree to our <span className="underline">Terms</span> and <span className="underline">Privacy Policy</span>.
+          </p>
+          <div className="h-px bg-stone-100 w-12 mx-auto" />
+          <p className="text-[10px] text-stone-300 text-center uppercase tracking-widest font-bold">
+            Secure & Private
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -205,6 +340,8 @@ export default function App() {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [isWeatherLoading, setIsWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [profileData, setProfileData] = useState({
     name: 'Harish Kumar',
     location: 'Chennai, Tamil Nadu',
@@ -224,6 +361,62 @@ export default function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+      if (currentUser) {
+        if (screen === 'splash' || screen === 'onboarding') {
+          // Keep it as is or move to home if already onboarded
+        }
+      } else {
+        // Only redirect to splash if trying to access protected screens while not logged in
+        if (!['splash', 'onboarding', 'login'].includes(screen)) {
+          setScreen('splash');
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [screen]);
+
+  // Firestore Sync
+  useEffect(() => {
+    if (!user || !isAuthReady) return;
+
+    const path = `users/${user.uid}`;
+    const unsubscribe = onSnapshot(doc(db, path), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setProfileData({
+          name: data.name || 'Harish Kumar',
+          location: data.location || 'Chennai, Tamil Nadu',
+          crops: data.crops || 'Paddy',
+          farmSize: data.farmSize || '5',
+          farmUnit: data.farmUnit || 'Acres'
+        });
+        
+        // Also update selection states if not editing
+        if (!isEditingProfile) {
+          setSelectedName(data.name || 'Harish Kumar');
+          setSelectedCrop(data.crops || 'Paddy');
+          setSelectedFarmSize(data.farmSize || '5');
+          setSelectedFarmUnit(data.farmUnit || 'Acres');
+          
+          const locParts = (data.location || 'Chennai, Tamil Nadu').split(',');
+          if (locParts.length === 2) {
+            setSelectedDistrict(locParts[0].trim());
+            setSelectedState(locParts[1].trim());
+          }
+        }
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, path);
+    });
+
+    return () => unsubscribe();
+  }, [user, isAuthReady, isEditingProfile]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -457,9 +650,21 @@ export default function App() {
   const renderScreen = () => {
     switch (screen) {
       case 'splash':
-        return <SplashScreen onComplete={() => setScreen('onboarding')} />;
+        return <SplashScreen 
+          isReady={isAuthReady}
+          onComplete={() => {
+            if (user) setScreen('home');
+            else setScreen('onboarding');
+          }} 
+        />;
       case 'onboarding':
-        return <Onboarding onSelect={(lang) => { setLanguage(lang); setScreen('home'); }} />;
+        return <Onboarding onSelect={(lang) => { 
+          setLanguage(lang); 
+          if (user) setScreen('home');
+          else setScreen('login');
+        }} />;
+      case 'login':
+        return <LoginScreen onLoginSuccess={() => setScreen('home')} />;
       case 'home':
         return (
           <div className="pb-32 px-6 pt-12">
@@ -1260,7 +1465,7 @@ export default function App() {
 
               {isEditingProfile && (
                 <button 
-                  onClick={() => {
+                  onClick={async () => {
                     if (!selectedState || !selectedDistrict) {
                       setLocationError("Please select a valid location");
                       return;
@@ -1273,15 +1478,33 @@ export default function App() {
                       alert("Please enter a valid name");
                       return;
                     }
-                    setProfileData({
-                      ...profileData,
+
+                    const newProfile = {
+                      uid: user?.uid,
                       name: selectedName,
                       location: `${selectedDistrict}, ${selectedState}`,
                       crops: selectedCrop,
                       farmSize: selectedFarmSize,
-                      farmUnit: selectedFarmUnit
-                    });
-                    setIsEditingProfile(false);
+                      farmUnit: selectedFarmUnit,
+                      updatedAt: serverTimestamp()
+                    };
+
+                    const path = `users/${user?.uid}`;
+                    try {
+                      if (user) {
+                        await setDoc(doc(db, path), newProfile);
+                      }
+                      setProfileData({
+                        name: selectedName,
+                        location: `${selectedDistrict}, ${selectedState}`,
+                        crops: selectedCrop,
+                        farmSize: selectedFarmSize,
+                        farmUnit: selectedFarmUnit
+                      });
+                      setIsEditingProfile(false);
+                    } catch (error) {
+                      handleFirestoreError(error, OperationType.WRITE, path);
+                    }
                   }}
                   disabled={!!locationError || !!cropError || !selectedState || !selectedDistrict || !selectedCrop || !selectedFarmSize || !selectedName.trim()}
                   className="w-full py-4 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
@@ -1293,7 +1516,10 @@ export default function App() {
             </div>
 
             <button 
-              onClick={() => setScreen('onboarding')}
+              onClick={async () => {
+                await signOut(auth);
+                setScreen('onboarding');
+              }}
               className="w-full mt-12 py-4 bg-stone-100 text-stone-500 rounded-xl font-bold hover:bg-red-50 hover:text-red-500 transition-all"
             >
               Logout
@@ -1320,7 +1546,7 @@ export default function App() {
         </motion.div>
       </AnimatePresence>
       
-      {['home', 'weather', 'market', 'profile', 'chat', 'schemes', 'upload'].includes(screen) && screen !== 'chat' && (
+      {['home', 'weather', 'market', 'profile', 'schemes', 'upload'].includes(screen) && (
         <BottomNav active={screen} onNavigate={setScreen} />
       )}
     </div>

@@ -1,29 +1,26 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
     // ===============================================================
     // Assumed Data Model
     // ===============================================================
     //
-    // Collection: /users/{userId}
-    // Document ID: userId (matches request.auth.uid)
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
     // Fields:
-    //   - uid: string (required) - Unique identifier for the user.
-    //   - name: string (required, 1-100 chars) - Name of the farmer.
-    //   - location: string (required, 1-200 chars) - Location of the farm.
-    //   - crops: string (required, 1-200 chars) - Primary crops grown.
-    //   - farmSize: string (optional, 0-100 chars) - Size of the farm.
-    //   - farmUnit: string (optional) - Unit of measurement for the farm size.
-    //   - soilType: string (optional, 0-100 chars) - Type of soil.
-    //   - updatedAt: timestamp (required) - Timestamp of the last update.
+    //   - uid: string (required) - The user's unique ID
+    //   - name: string (required, 1-100 chars) - Farmer's name
+    //   - location: string (required, 1-200 chars) - Farm location
+    //   - crops: string (required, 1-100 chars) - Primary crops
+    //   - farmSize: string (required, 1-20 chars) - Size of the farm
+    //   - farmUnit: string (required, 1-20 chars) - Unit of measurement
+    //   - updatedAt: timestamp (optional) - Last update time
     //
     // ===============================================================
 
     // ===============================================================
     // Helper Functions
     // ===============================================================
-    
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -32,46 +29,20 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isValidStringLength(field, minLen, maxLen) {
-      return request.resource.data[field] is string &&
-             request.resource.data[field].size() >= minLen &&
-             request.resource.data[field].size() <= maxLen;
-    }
-
-    function isValidOptionalString(field, minLen, maxLen) {
-      return !(field in request.resource.data) ||
-             (request.resource.data[field] is string &&
-              request.resource.data[field].size() >= minLen &&
-              request.resource.data[field].size() <= maxLen);
-    }
-
     function isValidUserProfile(data) {
-      return data.keys().hasAll(['uid', 'name', 'location', 'crops', 'updatedAt']) &&
-             data.keys().hasOnly(['uid', 'name', 'location', 'crops', 'farmSize', 'farmUnit', 'soilType', 'updatedAt']) &&
-             data.uid == request.auth.uid &&
-             isValidStringLength('name', 1, 100) &&
-             isValidStringLength('location', 1, 200) &&
-             isValidStringLength('crops', 1, 200) &&
-             isValidOptionalString('farmSize', 0, 100) &&
-             (!( 'farmUnit' in data) || data.farmUnit in ['Acres', 'Hectares', 'Bigha', 'Kanal']) &&
-             isValidOptionalString('soilType', 0, 100) &&
-             data.updatedAt is timestamp;
+      return data.keys().hasAll(['uid', 'name', 'location', 'crops', 'farmSize', 'farmUnit']) &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.location is string && data.location.size() > 0 && data.location.size() <= 200 &&
+             data.crops is string && data.crops.size() > 0 && data.crops.size() <= 100 &&
+             data.farmSize is string && data.farmSize.size() > 0 && data.farmSize.size() <= 20;
     }
-
-    // ===============================================================
-    // Rules
-    // ===============================================================
 
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
       allow update: if isOwner(userId) && isValidUserProfile(request.resource.data);
-      allow delete: if isOwner(userId);
-    }
-
-    // Default deny
-    match /{document=**} {
-      allow read, write: if false;
+      allow delete: if false; // Profiles should not be deleted by users directly
     }
   }
 }
