@@ -104,9 +104,6 @@ export async function checkSchemeEligibility(schemeName: string, lang: string = 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }]
-      }
     });
 
     return response.text || "Unable to determine eligibility at this time.";
@@ -145,44 +142,12 @@ export async function getWeatherAdvice(location: string, lang: string = 'en', cr
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }]
-      }
     });
 
     return response.text || "Unable to fetch weather advice.";
   } catch (error) {
     console.error("Weather Advice Error:", error);
     return "Error fetching weather advice.";
-  }
-}
-
-export async function findNearbyAgriOffices(location: string, lang: string = 'en') {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return "Location services are currently unavailable.";
-
-  const ai = new GoogleGenAI({ apiKey });
-  
-  const prompt = `
-    Find 3 nearby government agricultural offices or Krishi Vigyan Kendras (KVK) near ${location}.
-    Provide their names and a very brief description of what they do.
-    
-    Respond strictly in ${lang === 'ta' ? 'Tamil' : lang === 'hi' ? 'Hindi' : 'English'}.
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        tools: [{ googleMaps: {} }]
-      }
-    });
-
-    return response.text || "Unable to find nearby offices.";
-  } catch (error) {
-    console.error("Maps Grounding Error:", error);
-    return "Error finding nearby agricultural offices.";
   }
 }
 
@@ -203,7 +168,6 @@ export async function getAgriAdvice(prompt: string, lang: string = 'en', locatio
       contents: prompt,
       config: {
         systemInstruction: getSystemInstruction(lang, location, crop),
-        tools: [{ googleSearch: {} }],
         temperature: 0.7,
       },
     });

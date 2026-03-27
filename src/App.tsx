@@ -22,8 +22,7 @@ import {
   Edit2,
   Save,
   X,
-  History,
-  MapPin
+  History
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -38,13 +37,7 @@ import {
 } from 'recharts';
 import { cn } from './lib/utils';
 import { Screen, Language, Message, WeatherData } from './types';
-import { 
-  getAgriAdvice, 
-  analyzeCropImage, 
-  checkSchemeEligibility, 
-  getWeatherAdvice,
-  findNearbyAgriOffices 
-} from './services/gemini';
+import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvice } from './services/gemini';
 
 // --- Mock Data ---
 const LOCATION_DATA: Record<string, string[]> = {
@@ -211,8 +204,6 @@ export default function App() {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [isWeatherLoading, setIsWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [nearbyOffices, setNearbyOffices] = useState<string | null>(null);
-  const [isLoadingOffices, setIsLoadingOffices] = useState(false);
   const [profileData, setProfileData] = useState({
     name: 'Harish Kumar',
     location: 'Chennai, Tamil Nadu',
@@ -642,20 +633,6 @@ export default function App() {
                     <div className="prose prose-sm max-w-none prose-stone dark:prose-invert">
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
-                    {msg.role === 'assistant' && (
-                      <div className="mt-4 pt-4 border-t border-stone-100">
-                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2">Sources (Google Search)</p>
-                        <div className="flex flex-wrap gap-2">
-                          <button 
-                            onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(msg.content.slice(0, 50))}`, '_blank')}
-                            className="text-[10px] bg-stone-50 text-stone-500 px-2 py-1 rounded border border-stone-100 hover:bg-primary/5 hover:text-primary transition-all flex items-center gap-1"
-                          >
-                            <Search size={10} />
-                            Verify on Google
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                   <span className="text-[10px] text-stone-400 mt-1 font-medium">
                     {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -781,7 +758,7 @@ export default function App() {
                     </div>
                     <CloudSun size={80} className="text-secondary-container" />
                   </div>
-                  <div className="grid grid-cols-3 gap-4 pt-8 border-t border-white/20 mb-8">
+                  <div className="grid grid-cols-3 gap-4 pt-8 border-t border-white/20">
                     <div className="text-center">
                       <Droplets className="mx-auto mb-2 opacity-70" size={20} />
                       <p className="text-[10px] uppercase font-bold opacity-60">Humidity</p>
@@ -798,13 +775,6 @@ export default function App() {
                       <p className="font-bold">{weatherData.uvIndex}</p>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => window.open(`https://www.google.com/maps/search/${encodeURIComponent(profileData.location)}`, '_blank')}
-                    className="w-full py-3 bg-white/10 hover:bg-white/20 rounded-xl border border-white/20 text-xs font-bold flex items-center justify-center gap-2 transition-all"
-                  >
-                    <Globe size={14} />
-                    View on Google Maps
-                  </button>
                 </>
               ) : (
                 <div className="py-16 text-center">
@@ -851,14 +821,7 @@ export default function App() {
           </div>
         );
       case 'schemes':
-        const handleFindOffices = async () => {
-    setIsLoadingOffices(true);
-    const offices = await findNearbyAgriOffices(profileData.location, language);
-    setNearbyOffices(offices);
-    setIsLoadingOffices(false);
-  };
-
-  const filteredSchemes = SCHEMES.filter(s => 
+        const filteredSchemes = SCHEMES.filter(s => 
           s.title.toLowerCase().includes(schemeSearchQuery.toLowerCase()) || 
           s.desc.toLowerCase().includes(schemeSearchQuery.toLowerCase())
         );
@@ -882,39 +845,6 @@ export default function App() {
                 placeholder="Search schemes..."
                 className="w-full pl-12 pr-6 py-4 bg-white rounded-xl border border-stone-100 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
               />
-            </div>
-
-            <div className="mb-8">
-              <div className="bg-white p-6 rounded-xl border border-stone-100 shadow-sm">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary">
-                    <MapPin size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-stone-800">Local Support</h3>
-                    <p className="text-xs text-stone-400">Find nearby agricultural offices</p>
-                  </div>
-                </div>
-                
-                {nearbyOffices ? (
-                  <div className="bg-stone-50 p-4 rounded-lg border border-stone-100 mb-4">
-                    <div className="prose prose-sm prose-stone max-w-none">
-                      <ReactMarkdown>{nearbyOffices}</ReactMarkdown>
-                    </div>
-                  </div>
-                ) : null}
-
-                <button 
-                  onClick={handleFindOffices}
-                  disabled={isLoadingOffices}
-                  className="w-full py-3 bg-primary text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary-container transition-all disabled:opacity-50"
-                >
-                  {isLoadingOffices ? (
-                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
-                  ) : <Search size={16} />}
-                  {nearbyOffices ? "Refresh Nearby Offices" : "Find Nearby Agri Offices"}
-                </button>
-              </div>
             </div>
 
             <div className="space-y-6">
