@@ -10,6 +10,8 @@ import {
   Send, 
   ChevronLeft, 
   Globe,
+  ExternalLink,
+  ShoppingCart,
   MessageSquare,
   Droplets,
   Wind,
@@ -33,7 +35,9 @@ import {
   Trash2,
   BellOff,
   Download,
-  Database
+  Database,
+  BrainCircuit,
+  Sparkles
 } from 'lucide-react';
 import { GoogleAuthProvider } from 'firebase/auth';
 import ReactMarkdown from 'react-markdown';
@@ -55,7 +59,7 @@ import {
 } from 'recharts';
 import { cn } from './lib/utils';
 import { Screen, Language, Message, WeatherData, CropCalendar, CropRotationData, PriceAlert, AppNotification, MarketData, CropHistory } from './types';
-import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvice, findNearbyAgriOffices, getCropCalendar, getCropRotationSuggestions, getMarketPrices, reverseGeocode } from './services/gemini';
+import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvice, findNearbyAgriOffices, getCropCalendar, getCropRotationSuggestions, getMarketPrices, reverseGeocode, getPredictiveYieldEstimate } from './services/gemini';
 import { TranslationProvider, useTranslation } from './TranslationContext';
 import { PersonalizedCropTips } from './components/PersonalizedCropTips';
 import { InteractiveDistrictMap } from './components/InteractiveDistrictMap';
@@ -1091,6 +1095,8 @@ function AppContent() {
     chemical?: string;
     ratio?: string;
     shopRecommendation?: string;
+    buyLink?: string;
+    buyLinkTitle?: string;
   } | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -1167,6 +1173,39 @@ function AppContent() {
     }, (error) => handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/cropHistory`));
     return () => unsubscribe();
   }, [user]);
+
+  const [yieldPrediction, setYieldPrediction] = useState<any>(null);
+  const [isYieldPredictionLoading, setIsYieldPredictionLoading] = useState(false);
+  const [yieldPredictionError, setYieldPredictionError] = useState<string | null>(null);
+
+  const fetchYieldPrediction = async () => {
+    setIsYieldPredictionLoading(true);
+    setYieldPredictionError(null);
+    try {
+      const data = await getPredictiveYieldEstimate(
+        cropHistoryList,
+        profileData.crops,
+        profileData.farmSize,
+        profileData.farmUnit,
+        profileData.soilType,
+        profileData.location,
+        weatherData,
+        language
+      );
+      setYieldPrediction(data);
+    } catch (err: any) {
+      console.error("Error fetching yield prediction:", err);
+      setYieldPredictionError(err.message || "Failed to generate prediction");
+    } finally {
+      setIsYieldPredictionLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (profileActiveTab === 'history' && !yieldPrediction && !isYieldPredictionLoading && !yieldPredictionError) {
+      fetchYieldPrediction();
+    }
+  }, [profileActiveTab, cropHistoryList, profileData.crops]);
 
   const [googleDriveToken, setGoogleDriveToken] = useState<string | null>(null);
   const [isSyncingDrive, setIsSyncingDrive] = useState(false);
@@ -1980,7 +2019,9 @@ function AppContent() {
           confidence: result.confidence || 90,
           chemical: result.chemical || "",
           ratio: result.ratio || "",
-          shopRecommendation: result.shopRecommendation || ""
+          shopRecommendation: result.shopRecommendation || "",
+          buyLink: result.buyLink || "",
+          buyLinkTitle: result.buyLinkTitle || ""
         });
       } else {
         // Fallback to mock if AI fails or key missing
@@ -1992,7 +2033,9 @@ function AppContent() {
           confidence: 94,
           chemical: isTa ? 'ட்ரைசைக்ளாசோல் 75 WP (Tricyclazole)' : isHi ? 'ट्राइसाइक्लाजोल 75 WP (Tricyclazole)' : "Tricyclazole 75 WP",
           ratio: isTa ? '1 லிட்டர் தண்ணீருக்கு 0.6 கிராம்' : isHi ? '0.6 ग्राम प्रति लीटर पानी में' : "0.6g per 1 Liter of water",
-          shopRecommendation: isTa ? `அருகிலுள்ள ஆரம்ப வேளாண்மை கூட்டுறவு சங்கம் (PACS) அல்லது ${profileData.location.split(',')[0]} வேளாண்மை சேவை மையம்` : isHi ? `नजदीकी प्राथमिक कृषि सहकारी समिति (PACS) या ${profileData.location.split(',')[0]} कृषि सेवा केंद्र` : `Nearest Primary Agricultural Credit Society (PACS) or ${profileData.location.split(',')[0]} Agri Service Center`
+          shopRecommendation: isTa ? `அருகிலுள்ள ஆரம்ப வேளாண்மை கூட்டுறவு சங்கம் (PACS) அல்லது ${profileData.location.split(',')[0]} வேளாண்மை சேவை மையம்` : isHi ? `नजदीकी प्राथमिक कृषि सहकारी समिति (PACS) या ${profileData.location.split(',')[0]} कृषि सेवा केंद्र` : `Nearest Primary Agricultural Credit Society (PACS) or ${profileData.location.split(',')[0]} Agri Service Center`,
+          buyLink: "https://www.bighaat.com/pages/search-results-page?q=Tricyclazole",
+          buyLinkTitle: isTa ? 'BigHaat ஆன்லைனில் வாங்கவும்' : isHi ? 'BigHaat पर ऑनलाइन खरीदें' : 'Buy Tricyclazole on BigHaat Online'
         });
       }
       setIsScanning(false);
@@ -3013,6 +3056,29 @@ function AppContent() {
                             <p className="text-sm font-bold text-stone-800">{scanResult.shopRecommendation}</p>
                           </div>
                         )}
+                        {scanResult.buyLink && (
+                          <a 
+                            href={scanResult.buyLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between p-3.5 bg-green-50 rounded-2xl border border-green-200 hover:bg-green-100/80 active:scale-[0.99] transition-all shadow-sm group"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-xl bg-green-600 flex items-center justify-center text-white">
+                                <ShoppingCart size={18} />
+                              </div>
+                              <div className="text-left">
+                                <p className="text-[9px] uppercase font-extrabold tracking-wider text-green-700/80 mb-0.5">
+                                  {language === 'ta' ? '🛒 ஆன்லைனில் வாங்கவும் (விவசாயத் தயாரிப்பு)' : language === 'hi' ? '🛒 ऑनलाइन खरीदें (कृषि उत्पाद)' : '🛒 Buy Online (Agricultural Product)'}
+                                </p>
+                                <p className="text-sm font-bold text-stone-800 leading-tight">
+                                  {scanResult.buyLinkTitle || (language === 'ta' ? 'BigHaat-இல் வாங்கவும்' : language === 'hi' ? 'BigHaat पर खरीदें' : 'Order online via BigHaat')}
+                                </p>
+                              </div>
+                            </div>
+                            <ExternalLink size={16} className="text-green-600 group-hover:translate-x-0.5 transition-transform" />
+                          </a>
+                        )}
                       </div>
                     )}
                   </div>
@@ -3644,6 +3710,194 @@ function AppContent() {
                 </AnimatePresence>
 
                 <div className="space-y-4">
+                  {/* AI PREDICTIVE YIELD ESTIMATOR */}
+                  <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-6 rounded-3xl text-white shadow-xl border border-emerald-800/50 overflow-hidden relative">
+                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-36 h-36 bg-green-500/10 rounded-full blur-2xl pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 -mb-8 -ml-8 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+                    
+                    <div className="flex items-center justify-between mb-4 relative z-10">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                          <BrainCircuit size={18} />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-sm tracking-tight">
+                            {language === 'ta' ? 'AI மகசூல் கணிப்பு' : language === 'hi' ? 'AI उपज पूर्वानुमान' : 'AI Predictive Yield Estimate'}
+                          </h4>
+                          <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
+                            {profileData.crops} • {language === 'ta' ? 'தற்போதைய பருவம்' : language === 'hi' ? 'चालू मौसम' : 'Current Season'}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {(yieldPrediction || isYieldPredictionLoading) && (
+                        <button
+                          onClick={fetchYieldPrediction}
+                          disabled={isYieldPredictionLoading}
+                          className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-800/80 text-white text-[11px] font-bold rounded-xl shadow-md shadow-emerald-950/50 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                        >
+                          <RefreshCw size={12} className={cn(isYieldPredictionLoading && "animate-spin")} />
+                          {isYieldPredictionLoading 
+                            ? (language === 'ta' ? 'கணிக்கிறது...' : language === 'hi' ? 'पूर्वानुमान...' : 'Calculating...') 
+                            : (language === 'ta' ? 'புதுப்பி' : language === 'hi' ? 'अपडेट करें' : 'Refresh')}
+                        </button>
+                      )}
+                    </div>
+
+                    {isYieldPredictionLoading && !yieldPrediction ? (
+                      <div className="py-8 flex flex-col items-center justify-center gap-3 relative z-10">
+                        <div className="w-10 h-10 rounded-full border-2 border-emerald-500/20 border-t-emerald-400 animate-spin" />
+                        <p className="text-xs text-emerald-300 font-medium text-center px-4">
+                          {language === 'ta' ? 'உங்கள் பயிர் தரவு மற்றும் வானிலை போக்குகளை பகுப்பாய்வு செய்கிறது...' : language === 'hi' ? 'आपकी फसल के डेटा और मौसम के रुझानों का विश्लेषण किया जा रहा है...' : 'Analyzing your crop data & weather trends...'}
+                        </p>
+                      </div>
+                    ) : yieldPredictionError ? (
+                      <div className="bg-red-950/40 p-4 rounded-2xl border border-red-900/30 text-center relative z-10">
+                        <p className="text-xs text-red-300 font-bold mb-2">❌ {yieldPredictionError}</p>
+                        <button 
+                          onClick={fetchYieldPrediction}
+                          className="px-4 py-2 bg-red-900 hover:bg-red-800 text-white text-xs font-bold rounded-xl active:scale-95 transition-all"
+                        >
+                          {language === 'ta' ? 'மீண்டும் முயற்சி' : language === 'hi' ? 'पुनः प्रयास करें' : 'Retry prediction'}
+                        </button>
+                      </div>
+                    ) : yieldPrediction ? (
+                      <div className="space-y-4 relative z-10 animate-fade-in">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                          {/* Left Column: Yield projection and confidence */}
+                          <div className="col-span-1 md:col-span-5 bg-emerald-950/50 p-4 rounded-2xl border border-emerald-800/30 flex flex-col justify-between">
+                            <div>
+                              <span className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider block mb-1">
+                                {language === 'ta' ? 'மதிப்பிடப்பட்ட மகசூல்' : language === 'hi' ? 'अनुमानित उपज सीमा' : 'Projected Yield'}
+                              </span>
+                              <div className="text-2xl font-black text-white tracking-tight leading-none mb-1">
+                                {yieldPrediction.estimatedYieldRange}
+                              </div>
+                              <span className="text-[11px] text-emerald-300/80 font-medium leading-snug block">
+                                {language === 'ta' ? `பரப்பளவு: ${profileData.farmSize} ${profileData.farmUnit}` : language === 'hi' ? `क्षेत्रफल: ${profileData.farmSize} ${profileData.farmUnit}` : `For ${profileData.farmSize} ${profileData.farmUnit}`}
+                              </span>
+                            </div>
+                            
+                            <div className="mt-4 pt-4 border-t border-emerald-900/40">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider">
+                                  {language === 'ta' ? 'நம்பகத்தன்மை' : language === 'hi' ? 'विश्वास स्कोर' : 'Confidence'}
+                                </span>
+                                <span className="text-[11px] font-black text-emerald-300">
+                                  {yieldPrediction.confidenceScore}%
+                                </span>
+                              </div>
+                              <div className="w-full h-1.5 bg-emerald-900/60 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-yellow-400 to-emerald-400 rounded-full transition-all duration-1000"
+                                  style={{ width: `${yieldPrediction.confidenceScore}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right Column: Comparison percentage and text */}
+                          <div className="col-span-1 md:col-span-7 bg-emerald-950/50 p-4 rounded-2xl border border-emerald-800/30 flex flex-col justify-between">
+                            <div className="flex items-start gap-3">
+                              <div className={cn(
+                                "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-extrabold text-sm",
+                                yieldPrediction.comparisonPercentage >= 0 
+                                  ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400" 
+                                  : "bg-red-500/20 border border-red-500/30 text-red-400"
+                              )}>
+                                {yieldPrediction.comparisonPercentage >= 0 ? '+' : ''}{yieldPrediction.comparisonPercentage}%
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider block mb-0.5">
+                                  {language === 'ta' ? 'வரலாற்று ஒப்பீடு' : language === 'hi' ? 'ऐतिहासिक तुलना' : 'Historical Comparison'}
+                                </span>
+                                <p className="text-xs text-stone-200 font-medium leading-relaxed">
+                                  {yieldPrediction.comparisonText}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 pt-4 border-t border-emerald-900/40 flex items-start gap-2 text-stone-300">
+                              <CloudSun size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+                              <p className="text-[11px] leading-relaxed">
+                                <span className="font-bold text-white mr-1">
+                                  {language === 'ta' ? 'வானிலை தாக்கம்:' : language === 'hi' ? 'मौसम प्रभाव:' : 'Weather Impact:'}
+                                </span>
+                                {yieldPrediction.weatherImpactSummary}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* limiting and optimizing details */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                          {/* Limiting Factors */}
+                          {yieldPrediction.limitingFactors && yieldPrediction.limitingFactors.length > 0 && (
+                            <div className="bg-emerald-950/30 p-3.5 rounded-2xl border border-emerald-900/20">
+                              <div className="flex items-center gap-1.5 mb-2 text-yellow-400">
+                                <AlertTriangle size={14} />
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                                  {language === 'ta' ? 'இடர் காரணிகள்' : language === 'hi' ? 'जोखिम कारक' : 'Risk & Limiting Factors'}
+                                </span>
+                              </div>
+                              <ul className="space-y-1.5">
+                                {yieldPrediction.limitingFactors.map((factor: string, idx: number) => (
+                                  <li key={idx} className="text-[11px] text-stone-300 leading-snug flex items-start gap-1.5">
+                                    <span className="text-yellow-500 shrink-0 mt-1">•</span>
+                                    <span>{factor}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Optimizing Actions */}
+                          {yieldPrediction.optimizingActions && yieldPrediction.optimizingActions.length > 0 && (
+                            <div className="bg-emerald-950/30 p-3.5 rounded-2xl border border-emerald-900/20">
+                              <div className="flex items-center gap-1.5 mb-2 text-emerald-400">
+                                <CheckCircle2 size={14} />
+                                <span className="text-[10px] font-extrabold uppercase tracking-wider">
+                                  {language === 'ta' ? 'பரிந்துரைக்கப்பட்ட நடவடிக்கைகள்' : language === 'hi' ? 'अनुशंसित कदम' : 'Optimizing Actions'}
+                                </span>
+                              </div>
+                              <ul className="space-y-1.5">
+                                {yieldPrediction.optimizingActions.map((action: string, idx: number) => (
+                                  <li key={idx} className="text-[11px] text-stone-300 leading-snug flex items-start gap-1.5">
+                                    <span className="text-emerald-400 shrink-0 mt-1">✓</span>
+                                    <span>{action}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {cropHistoryList.length === 0 && (
+                          <div className="bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-[11px] text-emerald-300/90 text-center">
+                            💡 {language === 'ta' ? 'குறிப்பு: இன்னும் துல்லியமான கணிப்புக்கு உங்கள் முந்தைய பருவகால அறுவடை விவரங்களை கீழே சேர்க்கவும்!' : language === 'hi' ? 'संकेत: अधिक सटीक पूर्वानुमान के लिए नीचे अपने पिछले सीज़न के रिकॉर्ड जोड़ें!' : 'Tip: Add your past seasonal harvest records below for highly personalized, field-specific predictions!'}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 relative z-10">
+                        <p className="text-xs text-stone-300 mb-4 leading-relaxed max-w-md mx-auto">
+                          {language === 'ta' 
+                            ? 'உங்கள் வரலாற்று பயிர் பதிவுகள் மற்றும் தற்போதைய வானிலை தரவுகளை அடிப்படையாகக் கொண்டு இந்த பருவத்திற்கான மகசூலைக் கணிக்கவும்!' 
+                            : language === 'hi' 
+                            ? 'अपने ऐतिहासिक फसल रिकॉर्ड और वर्तमान मौसम डेटा के आधार पर इस मौसम की उपज का पूर्वानुमान लगाएं!' 
+                            : 'Get a personalized machine learning-based yield estimate for your current crop using your history and weather trends.'}
+                        </p>
+                        <button
+                          onClick={fetchYieldPrediction}
+                          className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-950/40 active:scale-95 transition-all flex items-center gap-1.5 mx-auto cursor-pointer"
+                        >
+                          <Sparkles size={13} />
+                          {language === 'ta' ? 'மகசூல் கணிப்பைக் கணக்கிடு' : language === 'hi' ? 'उपज का पूर्वानुमान लगाएं' : 'Estimate Yield with AI'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   {cropHistoryList.length === 0 ? (
                     <div className="bg-white p-8 rounded-2xl border border-stone-100 shadow-sm text-center py-12">
                       <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4 text-primary">

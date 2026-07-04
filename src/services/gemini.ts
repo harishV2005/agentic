@@ -62,9 +62,9 @@ export async function analyzeCropImage(base64Image: string, lang: string = 'en',
     1. Identify the crop.
     2. Check for any diseases, pests, or nutrient deficiencies.
     3. Provide a confidence score (0-100).
-    4. Suggest the proper chemical or organic treatment (as "chemical"), the precise mixing or application ratio (as "ratio"), and suggest a realistic nearby agricultural input shop, cooperative society, or mandi based on the location "${location}" (as "shopRecommendation").
-    5. Respond ONLY in JSON format: {"crop": "...", "disease": "...", "confidence": 85, "chemical": "...", "ratio": "...", "shopRecommendation": "..."}
-    6. Use ${lang === 'ta' ? 'Tamil' : lang === 'hi' ? 'Hindi' : 'English'} for all the text values.
+    4. Suggest the proper chemical or organic treatment (as "chemical"), the precise mixing or application ratio (as "ratio"), suggest a realistic nearby agricultural input shop based on the location "${location}" (as "shopRecommendation"), and provide a direct online store purchase or search link on a leading Indian agri-platform like BigHaat (e.g., https://www.bighaat.com/pages/search-results-page?q=[chemical_name]) (as "buyLink") and button text label (as "buyLinkTitle").
+    5. Respond ONLY in JSON format: {"crop": "...", "disease": "...", "confidence": 85, "chemical": "...", "ratio": "...", "shopRecommendation": "...", "buyLink": "...", "buyLinkTitle": "..."}
+    6. Use ${lang === 'ta' ? 'Tamil' : lang === 'hi' ? 'Hindi' : 'English'} for all the text values except the URL "buyLink" which must be a valid URL.
   `;
 
   try {
@@ -94,7 +94,9 @@ export async function analyzeCropImage(base64Image: string, lang: string = 'en',
       confidence: 85,
       chemical: lang === 'ta' ? 'ட்ரைசைக்ளாசோல் 75 WP (Tricyclazole)' : lang === 'hi' ? 'ट्राइसाइक्लाजोल 75 WP (Tricyclazole)' : 'Tricyclazole 75 WP',
       ratio: lang === 'ta' ? '1 லிட்டர் தண்ணீருக்கு 0.6 கிராம்' : lang === 'hi' ? '0.6 ग्राम प्रति लीटर पानी में' : '0.6g per 1 Liter of water',
-      shopRecommendation: lang === 'ta' ? `அருகிலுள்ள ஆரம்ப வேளாண்மை கூட்டுறவு சங்கம் (PACS) அல்லது ${location.split(',')[0]} வேளாண்மை சேவை மையம்` : lang === 'hi' ? `नजदीकी प्राथमिक कृषि सहकारी समिति (PACS) या ${location.split(',')[0]} कृषि सेवा केंद्र` : `Nearest Primary Agricultural Credit Society (PACS) or ${location.split(',')[0]} Agri Service Center`
+      shopRecommendation: lang === 'ta' ? `அருகிலுள்ள ஆரம்ப வேளாண்மை கூட்டுறவு சங்கம் (PACS) அல்லது ${location.split(',')[0]} வேளாண்மை சேவை மையம்` : lang === 'hi' ? `नजदीकी प्राथमिक कृषि सहकारी समिति (PACS) या ${location.split(',')[0]} कृषि सेवा केंद्र` : `Nearest Primary Agricultural Credit Society (PACS) or ${location.split(',')[0]} Agri Service Center`,
+      buyLink: "https://www.bighaat.com/pages/search-results-page?q=Tricyclazole",
+      buyLinkTitle: lang === 'ta' ? 'BigHaat ஆன்லைனில் வாங்கவும்' : lang === 'hi' ? 'BigHaat पर ऑनलाइन खरीदें' : 'Buy Tricyclazole on BigHaat Online'
     };
   }
 }
@@ -777,5 +779,112 @@ export async function reverseGeocode(lat: number, lon: number) {
       "state": "Tamil Nadu",
       "district": "Chennai"
     };
+  }
+}
+
+export async function getPredictiveYieldEstimate(
+  cropHistory: any[],
+  currentCrop: string,
+  farmSize: string,
+  farmUnit: string,
+  soilType: string,
+  location: string,
+  weatherData: any,
+  lang: string = 'en'
+) {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  const getFallbackYieldEstimate = () => {
+    const isTa = lang === 'ta';
+    const isHi = lang === 'hi';
+    return {
+      estimatedYieldRange: isTa ? "1.8 - 2.2 டன்" : isHi ? "1.8 - 2.2 टन" : "1.8 - 2.2 Tons",
+      confidenceScore: 85,
+      comparisonPercentage: 5,
+      comparisonText: isTa ? "கடந்த கால சராசரியை விட 5% கூடுதல் மகசூல் எதிர்பார்க்கப்படுகிறது." : isHi ? "पिछले औसत की तुलना में 5% अधिक उपज की उम्मीद है।" : "5% higher yield is expected compared to your past average.",
+      limitingFactors: isTa ? [
+        "அதிகரிக்கும் வெப்பநிலை காரணமாக மண்ணின் ஈரப்பதம் வேகமாக குறையலாம்.",
+        "இந்த பருவத்தில் பூச்சி தாக்குதலுக்கான வாய்ப்பு ஓரளவு உள்ளது."
+      ] : isHi ? [
+        "बढ़ते तापमान के कारण मिट्टी की नमी तेजी से घट सकती है।",
+        "इस मौसम में कीटों के हमले की थोड़ी संभावना है।"
+      ] : [
+        "High temperatures might cause fast depletion of soil moisture.",
+        "Potential risk of localized pest outbreak due to high humidity levels."
+      ],
+      optimizingActions: isTa ? [
+        "காலை அல்லது மாலை நேரத்தில் உகந்த நீர்ப்பாசனம் செய்யவும்.",
+        "நைட்ரஜன் மற்றும் பொட்டாஷ் உரங்களை பரிந்துரைக்கப்பட்ட அளவில் இடவும்."
+      ] : isHi ? [
+        "सुबह या शाम के समय उचित सिंचाई सुनिश्चित करें।",
+        "अनुशंसित मात्रा में नाइट्रोजन और पोटाश उर्वरकों का उपयोग करें।"
+      ] : [
+        "Schedule irrigation during early morning or late evening to minimize evaporation.",
+        "Apply recommended dosages of Nitrogen and Potash split-fertilizers."
+      ],
+      weatherImpactSummary: isTa ? 
+        "தற்போதைய மிதமான வெப்பநிலை மற்றும் ஈரப்பதம் தொடக்க வளர்ச்சிக்கு சாதகமாக உள்ளது." : 
+        isHi ? 
+        "वर्तमान मध्यम तापमान और आर्द्रता प्रारंभिक वानस्पतिक विकास के लिए अनुकूल हैं।" : 
+        "The current temperature and humidity trends are favorable for early vegetative growth stages."
+    };
+  };
+
+  if (!apiKey) return getFallbackYieldEstimate();
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const historyString = cropHistory && cropHistory.length > 0 
+    ? cropHistory.map(h => `- ${h.cropName} in ${h.season} (${h.year}): Yield = ${h.yieldValue}. Notes: ${h.notes || 'None'}`).join('\n')
+    : "No past history recorded by this farmer.";
+
+  const weatherString = weatherData 
+    ? `Current: Temp ${weatherData.temp}°C, Humidity ${weatherData.humidity}%, Condition: ${weatherData.condition}. 7-day high/low forecast: ${weatherData.forecast ? weatherData.forecast.map((f: any) => `${f.day}: ${f.tempHigh}°C/${f.tempLow}°C (${f.condition})`).join(', ') : 'None'}`
+    : "No current weather data available.";
+
+  const prompt = `
+    You are AgriSeva AI Yield Predictor. Predict the seasonal yield estimate for a farmer growing the primary crop: "${currentCrop}" on a farm of size ${farmSize || 'Not specified'} ${farmUnit || 'Acres'} with soil type: "${soilType || 'Not specified'}" located in "${location}".
+    
+    We have historical crop records from the farmer:
+    ${historyString}
+    
+    We have the current weather observations and forecast trends:
+    ${weatherString}
+    
+    Provide an advanced yield estimation analysis. Estimate what the yield range will be for this season's crop ("${currentCrop}"), keeping in mind the past trends, soil type, and current/predicted weather conditions.
+    
+    Respond ONLY in JSON format following this exact structure:
+    {
+      "estimatedYieldRange": "1.8 - 2.2 Tons", // String containing estimated range with unit
+      "confidenceScore": 88, // integer between 0 and 100 representing confidence
+      "comparisonPercentage": 8, // integer representing percentage change compared to historical average (negative if down, positive if up, 0 if no change or no history)
+      "comparisonText": "An 8% increase is projected compared to last Kharif season due to improved rainfall.", // A short comparison summary
+      "limitingFactors": [
+        "Bullet 1 on risks or factors that might lower the yield",
+        "Bullet 2 on risks or factors that might lower the yield"
+      ], // array of 2 to 3 short sentences
+      "optimizingActions": [
+        "Action item 1 to maximize the yield",
+        "Action item 2 to maximize the yield"
+      ], // array of 2 to 3 short sentences
+      "weatherImpactSummary": "A concise, actionable 1-2 sentence summary of how current weather trends impact this crop."
+    }
+    
+    Use ${lang === 'ta' ? 'Tamil' : lang === 'hi' ? 'Hindi' : 'English'} for all text values. The "estimatedYieldRange" should use appropriate local units (e.g., Tons, Bags, kg, Quintals) as represented in the history or appropriate for the crop, with translation.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    return JSON.parse(response.text || "{}");
+  } catch (error) {
+    console.error("Error generating predictive yield:", error);
+    return getFallbackYieldEstimate();
   }
 }
