@@ -35,7 +35,35 @@ service cloud.firestore {
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              data.location is string && data.location.size() > 0 && data.location.size() <= 200 &&
              data.crops is string && data.crops.size() > 0 && data.crops.size() <= 100 &&
-             data.farmSize is string && data.farmSize.size() > 0 && data.farmSize.size() <= 20;
+             data.farmSize is string && data.farmSize.size() > 0 && data.farmSize.size() <= 20 &&
+             (!('soilType' in data) || (data.soilType is string && data.soilType.size() <= 50));
+    }
+
+    function isValidPriceAlert(data) {
+      return data.keys().hasAll(['id', 'uid', 'crop', 'targetPrice', 'condition', 'active', 'createdAt']) &&
+             data.id is string && data.uid is string && data.uid == request.auth.uid &&
+             data.crop is string && data.crop.size() > 0 && data.crop.size() <= 100 &&
+             data.targetPrice is number &&
+             data.condition in ['above', 'below'] &&
+             data.active is bool;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'title', 'message', 'type', 'timestamp', 'read']) &&
+             data.id is string && data.title is string && data.title.size() <= 200 &&
+             data.message is string && data.message.size() <= 1000 &&
+             data.type in ['price', 'weather', 'system'] &&
+             data.read is bool;
+    }
+
+    function isValidCropHistory(data) {
+      return data.keys().hasAll(['id', 'uid', 'cropName', 'season', 'year', 'yieldValue', 'createdAt']) &&
+             data.id is string && data.uid is string && data.uid == request.auth.uid &&
+             data.cropName is string && data.cropName.size() > 0 && data.cropName.size() <= 100 &&
+             data.season is string && data.season.size() > 0 && data.season.size() <= 50 &&
+             data.year is int && data.year >= 1900 && data.year <= 2100 &&
+             data.yieldValue is string && data.yieldValue.size() > 0 && data.yieldValue.size() <= 100 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000));
     }
 
     match /users/{userId} {
@@ -43,6 +71,27 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
       allow update: if isOwner(userId) && isValidUserProfile(request.resource.data);
       allow delete: if false; // Profiles should not be deleted by users directly
+
+      match /alerts/{alertId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPriceAlert(request.resource.data);
+        allow update: if isOwner(userId) && isValidPriceAlert(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidNotification(request.resource.data);
+        allow update: if isOwner(userId) && isValidNotification(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /cropHistory/{historyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCropHistory(request.resource.data);
+        allow update: if isOwner(userId) && isValidCropHistory(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
     }
   }
 }

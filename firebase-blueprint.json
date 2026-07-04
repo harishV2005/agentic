@@ -11,15 +11,73 @@
         "crops": { "type": "string", "description": "Primary crops grown." },
         "farmSize": { "type": "string", "description": "Size of the farm." },
         "farmUnit": { "type": "string", "description": "Unit of measurement for farm size." },
+        "soilType": { "type": "string", "description": "Type of soil on the farm." },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp." }
       },
       "required": ["uid", "name", "location", "crops", "farmSize", "farmUnit"]
+    },
+    "PriceAlert": {
+      "title": "Price Alert",
+      "description": "Stores custom price alerts for crops.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "crop": { "type": "string" },
+        "targetPrice": { "type": "number" },
+        "condition": { "type": "string", "enum": ["above", "below"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "crop", "targetPrice", "condition", "active", "createdAt"]
+    },
+    "AppNotification": {
+      "title": "App Notification",
+      "description": "Stores in-app notifications for the user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["price", "weather", "system"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "title", "message", "type", "timestamp", "read"]
+    },
+    "CropHistory": {
+      "title": "Crop History",
+      "description": "Stores previously grown crops for the farmer, allowing them to track seasonal patterns over time.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "cropName": { "type": "string" },
+        "season": { "type": "string" },
+        "year": { "type": "integer" },
+        "yieldValue": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "cropName", "season", "year", "yieldValue", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "Collection of user profile documents indexed by user ID."
+    },
+    "/users/{userId}/alerts/{alertId}": {
+      "schema": "PriceAlert",
+      "description": "User-specific price alerts."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "AppNotification",
+      "description": "User-specific notifications."
+    },
+    "/users/{userId}/cropHistory/{historyId}": {
+      "schema": "CropHistory",
+      "description": "Farmer's historically grown crops over time."
     }
   }
 }
