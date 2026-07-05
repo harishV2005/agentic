@@ -2034,7 +2034,7 @@ function AppContent() {
           chemical: isTa ? 'ட்ரைசைக்ளாசோல் 75 WP (Tricyclazole)' : isHi ? 'ट्राइसाइक्लाजोल 75 WP (Tricyclazole)' : "Tricyclazole 75 WP",
           ratio: isTa ? '1 லிட்டர் தண்ணீருக்கு 0.6 கிராம்' : isHi ? '0.6 ग्राम प्रति लीटर पानी में' : "0.6g per 1 Liter of water",
           shopRecommendation: isTa ? `அருகிலுள்ள ஆரம்ப வேளாண்மை கூட்டுறவு சங்கம் (PACS) அல்லது ${profileData.location.split(',')[0]} வேளாண்மை சேவை மையம்` : isHi ? `नजदीकी प्राथमिक कृषि सहकारी समिति (PACS) या ${profileData.location.split(',')[0]} कृषि सेवा केंद्र` : `Nearest Primary Agricultural Credit Society (PACS) or ${profileData.location.split(',')[0]} Agri Service Center`,
-          buyLink: "https://www.bighaat.com/pages/search-results-page?q=Tricyclazole",
+          buyLink: "https://www.bighaat.com/search?q=Tricyclazole",
           buyLinkTitle: isTa ? 'BigHaat ஆன்லைனில் வாங்கவும்' : isHi ? 'BigHaat पर ऑनलाइन खरीदें' : 'Buy Tricyclazole on BigHaat Online'
         });
       }
