@@ -124,17 +124,17 @@ export async function checkSchemeEligibility(schemeName: string, lang: string = 
         `.trim();
       } else {
         return `
-* **Primary Eligibility**: Own cultivable land in the family's name (husband, wife, minor children). Not belonging to institutional ownership, government employees, income tax payers, or retired professionals with high pensions.
-* **Key Documents Needed**: Aadhaar Card linked to mobile number and bank account, Land Ownership records (Patta/Chitta), and active bank account details for Direct Benefit Transfer.
-* **Status**: **Likely Eligible**. Subject to successful Aadhaar e-KYC and local land record verification.
+* **Primary Eligibility**: Small and marginal farmer families with cultivable landholding in their names. Institutional landowners, government servants, taxpayers, or high pensioners are excluded.
+* **Key Documents Needed**: Aadhaar card linked to mobile number and bank account, land ownership records (Patta/Jamabandi/Khatauni), and active bank account with Direct Benefit Transfer (DBT) enabled.
+* **Status**: **Likely Eligible**. Subject to successful Aadhaar e-KYC and local land records verification.
         `.trim();
       }
-    } else if (normScheme.includes('BIMA') || normScheme.includes('INSURANCE') || normScheme.includes('FASAL')) {
+    } else if (normScheme.includes('BIMA') || normScheme.includes('FASAL') || normScheme.includes('INSURANCE')) {
       if (isTa) {
         return `
-* **முதன்மை தகுதி**: அறிவிக்கப்பட்ட பகுதிகளில் அறிவிக்கப்பட்ட பயிர்களை பயிரிடுதல். கடன் வாங்கிய மற்றும் கடன் பெறாத விவசாயிகள் இருவருக்கும் கிடைக்கும்.
-* **தேவையான முக்கிய ஆவணங்கள்**: ஆதார் அட்டை, நில ஆவணங்கள் (பட்டா/சிட்டா), உள்ளூர் அதிகாரியிடமிருந்து விதைப்பு சான்றிதழ் மற்றும் வங்கி கணக்கு புத்தகம்.
-* **நிலை**: **தகுதியுடையவர் (Likely Eligible)**. உள்ளூர் கூட்டுறவு வங்கிகள் அல்லது பொது சேவை மையங்கள் மூலம் பயிர் காப்பீட்டை வாங்கலாம்.
+* **முதன்மை தகுதி**: அறிவிக்கப்பட்ட பகுதிகளில் அறிவிக்கப்பட்ட பயிர்களை பயிரிடுதல். கடன் பெற்ற மற்றும் கடன் பெறாத விவசாயிகள் இருவரும் விண்ணப்பிக்கலாம்.
+* **தேவையான முக்கிய ஆவணங்கள்**: ஆதார் அட்டை, நில ஆவணங்கள் (பட்டா/சிட்டா), உள்ளூர் அதிகாரியிடமிருந்து பெறப்பட்ட பயிர் சாகுபடி சான்றிதழ் மற்றும் வங்கி கணக்கு புத்தகம்.
+* **நிலை**: **தகுதியுடையவர் (Likely Eligible)**. பயிர் காப்பீட்டை உள்ளூர் கூட்டுறவு வங்கிகள் அல்லது பொது சேவை மையங்கள் (CSC) மூலம் வாங்கலாம்.
         `.trim();
       } else if (isHi) {
         return `
@@ -215,14 +215,11 @@ export async function checkSchemeEligibility(schemeName: string, lang: string = 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }]
-      }
     });
 
     return response.text || getFallbackEligibility();
   } catch (error) {
-    console.warn("Eligibility AI: returning fallback data");
+    console.warn("Scheme Eligibility AI: returning fallback data");
     return getFallbackEligibility();
   }
 }
@@ -241,15 +238,15 @@ export async function getWeatherAdvice(location: string, lang: string = 'en', cr
 
 தற்போது உங்கள் பகுதியில் நிலவும் வானிலை (**${temp}°C**, **${cond}**, ஈரப்பதம் **${hum}%**) மற்றும் உங்கள் முதன்மை பயிரான **${crop}** க்கு ஏற்ப எங்களது பரிந்துரைகள்:
 
-1. **நீர்ப்பாசனம்**: அதிக வெப்பநிலை மற்றும் மேகமூட்டம் காரணமாக மண்ணின் ஈரப்பதத்தை தொடர்ந்து கண்காணிக்கவும். நீர் ஆவியாவதைத் தடுக்க காலை அல்லது மாலை வேளையில் மட்டுமே நீர்ப்பாசனம் செய்யவும்.
-2. **பயிர் பாதுகாப்பு**: தற்போதைய ஈரப்பதம் பூச்சி மற்றும் பூஞ்சை நோய்களுக்கு சாதகமாக இருப்பதால், பயிர்களை தினமும் கண்காணித்து முன்கூட்டியே இயற்கை வேப்ப எண்ணெய் கரைசல் (3%) தெளிக்கவும்.
-3. **அடுத்த 48 மணிநேர நடவடிக்கை**: உரங்கள் அல்லது பூச்சிக்கொல்லிகளை வெயில் இல்லாத குளிர்ச்சியான மாலை நேரங்களில் மட்டும் தெளிக்கவும்.
+1. **நீர்ப்பாசனம்**: அதிக வெப்பநிலை மற்றும் மேகமூட்டம் காரணமாக மண்ணின் ஈரப்பதத்தை தொடர்ந்து கண்காணிக்கவும். நீர்ப்பாசனம் செய்வதை காலை அல்லது மாலை நேரத்தில் மேற்கொள்ளவும்.
+2. **பயிர் பாதுகாப்பு**: தற்போதைய ஈரப்பதம் பூச்சி மற்றும் நோய் தாக்குதலுக்கு உகந்தது. எனவே இலைகளின் அடிப்பகுதியை தினமும் கண்காணிக்கவும்.
+3. **அடுத்த 48 மணி நேர செயல்பாடு**: வெயில் அதிகமாக இருக்கும் போது பூச்சிக்கொல்லி அல்லது உரங்கள் தெளிப்பதைத் தவிர்க்கவும். மாலை வேளையில் தெளிப்பது நல்லது.
       `.trim();
     } else if (lang === 'hi') {
       return `
 ### 🌦️ कृषि मौसम विशेषज्ञ सलाह
 
-आपके क्षेत्र में वर्तमान तापमान (**${temp}°C**, **${cond}**, आर्द्रता **${hum}%**) और आपकी मुख्य फसल **${crop}** के लिए हमारी विशेष सलाह:
+वर्तमान मौसम (**${temp}°C**, **${cond}**, आर्द्रता **${hum}%**) और आपकी मुख्य फसल **${crop}** के आधार पर सलाह:
 
 1. **सिंचाई**: उच्च तापमान के कारण मिट्टी की नमी पर लगातार नजर रखें। पानी के वाष्पीकरण को कम करने के लिए सुबह या देर शाम को ही सिंचाई करें।
 2. **फसल सुरक्षा**: वर्तमान आर्द्रता कीटों और फफूंद जनित रोगों के अनुकूल है। जैविक रोकथाम के लिए समय पर नीम के तेल (3%) का छिड़काव करें।
@@ -302,8 +299,17 @@ Based on the current weather (**${temp}°C**, **${cond}**, **${hum}%** humidity)
 
     return response.text || getFallbackWeatherAdvice();
   } catch (error) {
-    console.warn("Weather Advice: returning fallback data");
-    return getFallbackWeatherAdvice();
+    console.warn("Weather Advice with search failed, retrying without search grounding:", error);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+      });
+      return response.text || getFallbackWeatherAdvice();
+    } catch (innerError) {
+      console.error("Weather Advice complete failure:", innerError);
+      return getFallbackWeatherAdvice();
+    }
   }
 }
 
@@ -385,8 +391,17 @@ Here are the nearest government agricultural offices in and around ${city}:
 
     return response.text || getFallbackOffices();
   } catch (error) {
-    console.warn("Maps Grounding: returning fallback data");
-    return getFallbackOffices();
+    console.warn("Maps Grounding failed, retrying without maps grounding:", error);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+      });
+      return response.text || getFallbackOffices();
+    } catch (innerError) {
+      console.error("Maps Grounding complete failure:", innerError);
+      return getFallbackOffices();
+    }
   }
 }
 
@@ -434,8 +449,21 @@ export async function getAgriAdvice(prompt: string, lang: string = 'en', locatio
     
     return response.text || getFallbackGeneralAdvice();
   } catch (error: any) {
-    console.warn("Gemini General Advice: returning fallback data");
-    return getFallbackGeneralAdvice();
+    console.warn("Agri Advice with search failed, retrying without search grounding:", error);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          systemInstruction: getSystemInstruction(lang, location, crop, farmSize, soilType),
+          temperature: 0.7,
+        },
+      });
+      return response.text || getFallbackGeneralAdvice();
+    } catch (innerError) {
+      console.error("Agri Advice complete failure:", innerError);
+      return getFallbackGeneralAdvice();
+    }
   }
 }
 
@@ -454,7 +482,7 @@ export async function getCropCalendar(crop: string, location: string, lang: stri
           description: lang === 'ta' ? "நாற்றங்கால் தயாரித்தல் மற்றும் நாற்றுக்களை நடுகை செய்தல்." : lang === 'hi' ? "नर्सरी की तैयारी और पौधों की रोपाई करना।" : "Nursery preparation and transplanting of seedlings."
         },
         {
-          month: lang === 'ta' ? "ஆகஸ்ட்" : lang === 'hi' ? "अगस्त" : "August",
+          month: lang === 'ta' ? "ஆகஸ்ட்" : lang === 'hi' ? "ஆகஸ்ட்" : "August",
           activity: lang === 'ta' ? "களை எடுத்தல் மற்றும் நீர் மேலாண்மை" : lang === 'hi' ? "निराई और जल प्रबंधन" : "Weeding & Water Management",
           type: "cultivation",
           description: lang === 'ta' ? "முக்கியமான கட்டங்களில் வயலை சுத்தமாகவும், முறையான நீர் பாசனத்தையும் பராமரித்தல்." : lang === 'hi' ? "महत्वपूर्ण चरणों में खेत को साफ रखना और उचित सिंचाई बनाए रखना।" : "Keeping the field weed-free and maintaining proper irrigation at critical growth stages."
@@ -478,7 +506,7 @@ export async function getCropCalendar(crop: string, location: string, lang: stri
           description: lang === 'ta' ? "அறுவடைக்கு 10 நாட்களுக்கு முன்பு வயலில் உள்ள நீரை வடித்தல்." : lang === 'hi' ? "कटाई से 10 दिन पहले खेत से पानी सुखाना।" : "Draining out water from the field 10 days before expected harvest date."
         },
         {
-          month: lang === 'ta' ? "டிசம்பர்" : lang === 'hi' ? "டிசंबर" : "December",
+          month: lang === 'ta' ? "டிசம்பர்" : lang === 'hi' ? "டிசம்பர்" : "December",
           activity: lang === 'ta' ? "அறுவடை மற்றும் கதிரடித்தல்" : lang === 'hi' ? "कटाई और गहाई" : "Harvesting & Threshing",
           type: "harvesting",
           description: lang === 'ta' ? "பயிர்களை அறுவடை செய்து, கதிரடித்து, தானியங்களை காய வைத்தல்." : lang === 'hi' ? "फसलों की कटाई, गहाई और दानों को सुखाने की प्रक्रिया।" : "Cutting the crops, threshing, and drying the grains to safe moisture level."
@@ -735,8 +763,20 @@ export async function getMarketPrices(location: string, crops: string[], lang: s
 
     return JSON.parse(response.text || "{}");
   } catch (error) {
-    console.warn("Market Price AI: returning fallback data");
-    return getFallbackPrices();
+    console.warn("Market Price with search failed, retrying without search grounding:", error);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+      return JSON.parse(response.text || "{}");
+    } catch (innerError) {
+      console.error("Market Price complete failure:", innerError);
+      return getFallbackPrices();
+    }
   }
 }
 
