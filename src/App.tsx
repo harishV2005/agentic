@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sprout, 
@@ -37,11 +37,21 @@ import {
   Download,
   Database,
   BrainCircuit,
-  Sparkles
+  Sparkles,
+  RotateCcw,
+  ShieldCheck,
+  FileText,
+  PhoneCall,
+  ChevronDown,
+  ChevronUp,
+  Building2,
+  Check,
+  ArrowUpRight
 } from 'lucide-react';
 import { GoogleAuthProvider } from 'firebase/auth';
 import ReactMarkdown from 'react-markdown';
 import { exportCropCalendarPDF, exportCropRotationPDF } from './utils/pdfExport';
+import { GOVT_SCHEMES, evaluateFarmerEligibility, GovtScheme, SchemeEvaluation } from './data/schemes';
 import { syncDataToGoogleDrive } from './utils/googleDrive';
 import { 
   BarChart, 
@@ -63,6 +73,9 @@ import { getAgriAdvice, analyzeCropImage, checkSchemeEligibility, getWeatherAdvi
 import { TranslationProvider, useTranslation } from './TranslationContext';
 import { PersonalizedCropTips } from './components/PersonalizedCropTips';
 import { InteractiveDistrictMap } from './components/InteractiveDistrictMap';
+import { CropYieldHistoryChart } from './components/CropYieldHistoryChart';
+import { HistoricalMarketPriceComparison } from './components/HistoricalMarketPriceComparison';
+import { CropPriceForecastCard } from './components/CropPriceForecastCard';
 import { 
   auth, 
   db, 
@@ -135,14 +148,22 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-// --- Mock Data ---
 const LOCATION_DATA: Record<string, string[]> = {
-  'Tamil Nadu': ['Chennai', 'Coimbatore', 'Madurai', 'Trichy','Tirunelveli', 'Karur', 'Salem', 'Tanjore'],
-  'Karnataka': ['Bangalore', 'Mysore', 'Mangalore'],
-  'Kerala': ['Kochi', 'Thiruvananthapuram', 'Kozhikode'],
-  'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur'],
-  'Telangana': ['Hyderabad', 'Warangal', 'Nizamabad'],
-  'Maharashtra': ['Mumbai', 'Pune', 'Nagpur', 'Nashik'],
+  'Tamil Nadu': ['Salem', 'Thanjavur', 'Coimbatore', 'Madurai', 'Trichy', 'Tirunelveli', 'Karur', 'Erode', 'Dindigul', 'Chennai'],
+  'Punjab': ['Ludhiana', 'Amritsar', 'Jalandhar', 'Patiala', 'Bathinda', 'Sangrur', 'Ferozepur'],
+  'Haryana': ['Karnal', 'Hisar', 'Ambala', 'Sirsa', 'Rohtak', 'Kurukshetra'],
+  'Uttar Pradesh': ['Varanasi', 'Lucknow', 'Kanpur', 'Agra', 'Prayagraj', 'Meerut', 'Bareilly', 'Gorakhpur'],
+  'Madhya Pradesh': ['Indore', 'Bhopal', 'Ujjain', 'Jabalpur', 'Gwalior', 'Hoshangabad', 'Dewas'],
+  'Rajasthan': ['Jaipur', 'Jodhpur', 'Kota', 'Bikaner', 'Sri Ganganagar', 'Alwar', 'Udaipur'],
+  'Gujarat': ['Rajkot', 'Ahmedabad', 'Surat', 'Vadodara', 'Junagadh', 'Bhavnagar', 'Mehsana'],
+  'Maharashtra': ['Nashik', 'Pune', 'Nagpur', 'Kolhapur', 'Solapur', 'Aurangabad', 'Mumbai', 'Amravati'],
+  'Andhra Pradesh': ['Guntur', 'Vijayawada', 'Visakhapatnam', 'Kurnool', 'Nellore', 'Rajahmundry', 'Anantapur'],
+  'Telangana': ['Nizamabad', 'Warangal', 'Hyderabad', 'Karimnagar', 'Khammam', 'Nalgonda'],
+  'Karnataka': ['Bangalore', 'Mysore', 'Mangalore', 'Belgaum', 'Shimoga', 'Bellary', 'Dharwad'],
+  'Kerala': ['Palakkad', 'Kozhikode', 'Kochi', 'Thiruvananthapuram', 'Wayanad', 'Thrissur', 'Idukki'],
+  'Bihar': ['Patna', 'Gaya', 'Muzaffarpur', 'Bhagalpur', 'Darbhanga', 'Rohtas'],
+  'West Bengal': ['Burdwan', 'Kolkata', 'Murshidabad', 'Nadia', 'Hooghly', 'Malda'],
+  'Odisha': ['Bhubaneswar', 'Cuttack', 'Sambalpur', 'Balasore', 'Bargarh'],
   'Delhi': ['New Delhi', 'North Delhi', 'South Delhi']
 };
 
@@ -198,11 +219,7 @@ const AVERAGE_MARKET_TRENDS = [
   { month: 'Jun', price: 2200 },
 ];
 
-const SCHEMES = [
-  { id: 1, title: "PM-KISAN", desc: "Direct income support of ₹6,000 per year to all landholding farmer families." },
-  { id: 2, title: "PM Fasal Bima Yojana", desc: "Crop insurance scheme to provide financial support to farmers suffering crop loss." },
-  { id: 3, title: "Kisan Credit Card (KCC)", desc: "Provides farmers with timely access to credit for their cultivation and other needs." },
-];
+const SCHEMES = GOVT_SCHEMES;
 
 // --- Components ---
 
@@ -1104,6 +1121,9 @@ function AppContent() {
   const [checkingSchemeId, setCheckingSchemeId] = useState<number | null>(null);
   const [eligibilityResults, setEligibilityResults] = useState<Record<number, string>>({});
   const [schemeSearchQuery, setSchemeSearchQuery] = useState('');
+  const [schemeCategoryFilter, setSchemeCategoryFilter] = useState<string>('all');
+  const [filterEligibleOnly, setFilterEligibleOnly] = useState<boolean>(false);
+  const [expandedSchemeDocs, setExpandedSchemeDocs] = useState<Record<number, boolean>>({});
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [weatherAdvice, setWeatherAdvice] = useState<string>('');
   const [isLoadingWeatherAdvice, setIsLoadingWeatherAdvice] = useState(false);
@@ -1150,6 +1170,14 @@ function AppContent() {
     farmUnit: 'Acres',
     soilType: ''
   });
+
+  const automatedSchemeEvaluations = useMemo(() => {
+    const res: Record<number, SchemeEvaluation> = {};
+    GOVT_SCHEMES.forEach(scheme => {
+      res[scheme.id] = evaluateFarmerEligibility(scheme, profileData, language);
+    });
+    return res;
+  }, [profileData, language]);
 
   const [cropHistoryList, setCropHistoryList] = useState<CropHistory[]>([]);
   const [profileActiveTab, setProfileActiveTab] = useState<'info' | 'history'>('info');
@@ -1282,7 +1310,16 @@ function AppContent() {
   };
 
   const handleAddCropHistory = async (cropHistoryData: Omit<CropHistory, 'id' | 'uid' | 'createdAt'>) => {
-    if (!user) return;
+    if (!user) {
+      const mockRecord: CropHistory = {
+        ...cropHistoryData,
+        id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        uid: 'guest',
+        createdAt: new Date()
+      };
+      setCropHistoryList(prev => [mockRecord, ...prev]);
+      return;
+    }
     const path = `users/${user.uid}/cropHistory`;
     try {
       const docRef = doc(collection(db, path));
@@ -1298,7 +1335,10 @@ function AppContent() {
   };
 
   const handleDeleteCropHistory = async (id: string) => {
-    if (!user) return;
+    if (!user) {
+      setCropHistoryList(prev => prev.filter(item => item.id !== id));
+      return;
+    }
     const path = `users/${user.uid}/cropHistory/${id}`;
     try {
       await deleteDoc(doc(db, path));
@@ -1654,7 +1694,7 @@ function AppContent() {
               setProfileData(prev => ({ ...prev, location: `${geoData.district}, ${geoData.state}` }));
             }
           } catch (error) {
-            console.error("Reverse geocoding error:", error);
+            console.warn("Reverse geocoding handled notice:", error);
           } finally {
             setHasAutoDetectedLocation(true);
           }
@@ -2088,56 +2128,85 @@ function AppContent() {
       ? `मैंने अपनी ${scanResult.crop} फसल को स्कैन किया है। इसमें ${scanResult.disease} पाया गया है। अनुशंसित दवा: ${scanResult.chemical}, अनुपात: ${scanResult.ratio}। नजदीकी दुकान: ${scanResult.shopRecommendation || 'अज्ञात'}। मुझे इसे कैसे इस्तेमाल करना चाहिए?`
       : `I've scanned my ${scanResult.crop}. It detected ${scanResult.disease} with ${scanResult.confidence}% confidence. Recommended treatment chemical: ${scanResult.chemical}, mixing ratio: ${scanResult.ratio}, suggested shop: ${scanResult.shopRecommendation || 'N/A'}. How should I apply this and proceed?`;
 
-    setMessages(prev => [...prev, {
+    const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: userPrompt,
       timestamp: new Date()
-    }]);
-    
+    };
+
+    const currentHistory = messages.slice(-10).map(m => ({ role: m.role, content: m.content }));
+
+    setMessages(prev => [...prev, userMsg]);
     setIsTyping(true);
-    const response = await getAgriAdvice(
-      `The user scanned ${scanResult.crop} and detected ${scanResult.disease}. The vision model recommended chemical: ${scanResult.chemical}, mixing ratio: ${scanResult.ratio}, and local shop: ${scanResult.shopRecommendation}. Provide a brief, supportive, and direct guide on how to apply this chemical safely and where to buy it. Keep it under 6 lines in ${language}.`, 
-      language,
-      profileData.location,
-      profileData.crops,
-      profileData.farmSize + ' ' + profileData.farmUnit,
-      profileData.soilType
-    );
-    setMessages(prev => [...prev, {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: response,
-      timestamp: new Date()
-    }]);
-    setIsTyping(false);
+
+    try {
+      const response = await getAgriAdvice(
+        `The user scanned ${scanResult.crop} and detected ${scanResult.disease}. The vision model recommended chemical: ${scanResult.chemical}, mixing ratio: ${scanResult.ratio}, and local shop: ${scanResult.shopRecommendation}. Provide a practical, helpful guide on how to apply this treatment safely and correctly in ${language}.`, 
+        language,
+        profileData.location,
+        profileData.crops,
+        profileData.farmSize + ' ' + profileData.farmUnit,
+        profileData.soilType,
+        currentHistory
+      );
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: response,
+        timestamp: new Date()
+      }]);
+    } catch (err) {
+      console.error("Consult AI error:", err);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
-  const handleSendMessage = async () => {
-    if (!input.trim()) return;
+  const handleSendMessage = async (customPrompt?: string) => {
+    const textToSend = (typeof customPrompt === 'string' ? customPrompt : input).trim();
+    if (!textToSend || isTyping) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: textToSend,
       timestamp: new Date(),
     };
+
+    const currentHistory = messages.slice(-10).map(m => ({
+      role: m.role,
+      content: m.content
+    }));
 
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
 
-    const response = await getAgriAdvice(input, language, profileData.location, profileData.crops, profileData.farmSize + ' ' + profileData.farmUnit, profileData.soilType);
-    
-    const aiMsg: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: response,
-      timestamp: new Date(),
-    };
+    try {
+      const response = await getAgriAdvice(
+        textToSend, 
+        language, 
+        profileData.location, 
+        profileData.crops, 
+        profileData.farmSize + ' ' + profileData.farmUnit, 
+        profileData.soilType,
+        currentHistory
+      );
+      
+      const aiMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: response,
+        timestamp: new Date(),
+      };
 
-    setMessages(prev => [...prev, aiMsg]);
-    setIsTyping(false);
+      setMessages(prev => [...prev, aiMsg]);
+    } catch (err) {
+      console.error("Error sending message to AgriSeva AI:", err);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const fetchCalendar = async () => {
@@ -2440,65 +2509,145 @@ function AppContent() {
       case 'chat':
         return (
           <div className="h-screen flex flex-col bg-surface">
-            <header className="p-6 bg-white border-b border-stone-100 flex items-center gap-4 sticky top-0 z-10">
-              <button onClick={() => setScreen('home')} className="p-2 hover:bg-stone-50 rounded-full">
-                <ChevronLeft size={24} />
-              </button>
-              <div>
-                <h2 className="text-xl font-bold text-primary">AgriSeva AI Expert</h2>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  <span className="text-xs text-stone-400 font-medium">Multi-Agent System Active</span>
+            <header className="p-5 bg-white border-b border-stone-100 flex items-center justify-between sticky top-0 z-10 shadow-xs">
+              <div className="flex items-center gap-3">
+                <button onClick={() => setScreen('home')} className="p-2 hover:bg-stone-50 rounded-full transition-colors">
+                  <ChevronLeft size={22} />
+                </button>
+                <div>
+                  <h2 className="text-lg font-extrabold text-stone-800 tracking-tight">AgriSeva AI Expert</h2>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                    <span className="text-[11px] text-stone-400 font-medium">Multi-Agent System Ready</span>
+                  </div>
                 </div>
               </div>
+
+              {messages.length > 0 && (
+                <button 
+                  onClick={() => setMessages([])}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-stone-500 bg-stone-100 hover:bg-stone-200/80 rounded-full transition-all"
+                  title="Clear conversation"
+                >
+                  <RotateCcw size={13} />
+                  <span>{language === 'ta' ? 'அழி' : language === 'hi' ? 'साफ़ करें' : 'Clear'}</span>
+                </button>
+              )}
             </header>
             
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 no-scrollbar">
               {messages.length === 0 && (
-                <div className="text-center py-12">
-                  <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6 text-primary">
-                    <Sprout size={40} />
+                <div className="text-center py-6 max-w-lg mx-auto">
+                  <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-emerald-600 shadow-xs border border-emerald-100">
+                    <Sprout size={32} />
                   </div>
-                  <h3 className="text-xl font-bold text-stone-800 mb-2">How can I help you today?</h3>
-                  <p className="text-stone-400 max-w-xs mx-auto">Ask about crop health, weather, market prices, or government schemes.</p>
+                  <h3 className="text-xl font-bold text-stone-800 mb-1">
+                    {language === 'ta' ? 'வணக்கம்! விவசாய AI வழிகாட்டி' : language === 'hi' ? 'नमस्ते! कृषि एआई साथी' : 'Welcome to AgriSeva AI'}
+                  </h3>
+                  <p className="text-stone-500 text-xs max-w-sm mx-auto mb-6 leading-relaxed">
+                    {language === 'ta' 
+                      ? `${profileData.location} பகுதியில் உங்கள் ${profileData.crops} பயிருக்கான பயிர் பாதுகாப்பு, வானிலை, சந்தை விலை மற்றும் அரசு திட்டங்களுக்கான ஆலோசனைகள்.`
+                      : language === 'hi'
+                      ? `${profileData.location} में आपकी ${profileData.crops} फसल के लिए कीट नियंत्रण, मौसम, मंडी भाव और सरकारी योजनाओं की सटीक सलाह।`
+                      : `Expert advice for your ${profileData.crops} in ${profileData.location} covering pests, weather, mandi prices, and govt schemes.`}
+                  </p>
+
+                  <div className="text-left space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400 px-1">
+                      {language === 'ta' ? 'சுலபமான கேள்விகள்' : language === 'hi' ? 'सुझाए गए प्रश्न' : 'Suggested Questions'}
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        {
+                          icon: '🌾',
+                          text: language === 'ta' 
+                            ? `${profileData.crops} பயிருக்கு தேவையான NPK உர அட்டவணை மற்றும் பரிந்துரை என்ன?`
+                            : language === 'hi'
+                            ? `${profileData.crops} की फसल के लिए संतुलित NPK उर्वरक का समय और मात्रा क्या है?`
+                            : `What is the recommended fertilizer (NPK) schedule for ${profileData.crops}?`
+                        },
+                        {
+                          icon: '🐛',
+                          text: language === 'ta'
+                            ? `${profileData.crops} பயிரில் இலைக்கருகல் மற்றும் பூச்சி தாக்குதலை தடுப்பது எப்படி?`
+                            : language === 'hi'
+                            ? `${profileData.crops} में कीट और रोगों की पहचान व जैविक रोकथाम कैसे करें?`
+                            : `How to prevent blast disease, stem borer & pests in ${profileData.crops}?`
+                        },
+                        {
+                          icon: '🌦️',
+                          text: language === 'ta'
+                            ? `${profileData.location} தற்போதைய வானிலைக்கு ஏற்ப நீர்ப்பாசன வழிகாட்டல்`
+                            : language === 'hi'
+                            ? `${profileData.location} में वर्तमान मौसम के अनुसार सिंचाई और खेत की देखभाल`
+                            : `Irrigation guidance based on current weather in ${profileData.location}`
+                        },
+                        {
+                          icon: '📈',
+                          text: language === 'ta'
+                            ? `${profileData.location} மண்டிகளில் ${profileData.crops} சந்தை விலை மற்றும் விற்கும் நேரம்`
+                            : language === 'hi'
+                            ? `${profileData.location} की मंडियों में ${profileData.crops} का भाव और बेचने का सही समय`
+                            : `Current Mandi prices and best selling time for ${profileData.crops}`
+                        },
+                        {
+                          icon: '🏛️',
+                          text: language === 'ta'
+                            ? `PM-KISAN மற்றும் பயிர் காப்பீட்டுக்கு விண்ணப்பிக்கும் முறை`
+                            : language === 'hi'
+                            ? `पीएम किसान और फसल बीमा योजना की पात्रता और आवश्यक दस्तावेज`
+                            : `PM-KISAN eligibility criteria and how to apply for crop insurance`
+                        }
+                      ].map((item, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleSendMessage(item.text)}
+                          className="w-full p-3.5 bg-white hover:bg-emerald-50/70 border border-stone-200/80 hover:border-emerald-300 rounded-xl text-left text-xs font-medium text-stone-700 hover:text-emerald-800 transition-all flex items-center gap-3 shadow-xs active:scale-[0.99] cursor-pointer"
+                        >
+                          <span className="text-base shrink-0">{item.icon}</span>
+                          <span className="flex-1 leading-snug">{item.text}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
               {messages.map((msg) => (
                 <div key={msg.id} className={cn(
-                  "flex flex-col max-w-[85%]",
+                  "flex flex-col max-w-[88%] sm:max-w-[80%]",
                   msg.role === 'user' ? "ml-auto items-end" : "mr-auto items-start"
                 )}>
                   <div className={cn(
-                    "p-4 rounded-2xl shadow-sm",
+                    "p-4 rounded-2xl shadow-xs text-sm leading-relaxed",
                     msg.role === 'user' 
-                      ? "bg-primary text-white rounded-tr-none" 
-                      : "bg-white text-stone-800 rounded-tl-none border border-stone-100"
+                      ? "bg-primary text-white rounded-tr-xs" 
+                      : "bg-white text-stone-800 rounded-tl-xs border border-stone-100"
                   )}>
                     <div className="prose prose-sm max-w-none prose-stone dark:prose-invert">
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
                   </div>
-                  <span className="text-[10px] text-stone-400 mt-1 font-medium">
+                  <span className="text-[10px] text-stone-400 mt-1 font-medium px-1">
                     {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
               ))}
               {isTyping && (
                 <div className="flex flex-col items-start max-w-[85%]">
-                  <div className="bg-white p-4 rounded-2xl rounded-tl-none border border-stone-100 shadow-sm flex items-center gap-2">
+                  <div className="bg-white p-4 rounded-2xl rounded-tl-xs border border-stone-100 shadow-xs flex items-center gap-2">
                     <div className="flex gap-1">
                       <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                       <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                       <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
                     </div>
-                    <span className="text-xs text-stone-400 font-medium">Agents are thinking...</span>
+                    <span className="text-xs text-stone-400 font-medium">AgriSeva Agent is analyzing...</span>
                   </div>
                 </div>
               )}
               <div ref={chatEndRef} />
             </div>
 
-            <div className="p-6 bg-white border-t border-stone-100 pb-10">
+            <div className="p-4 sm:p-6 bg-white border-t border-stone-100 pb-10">
               <div className="flex gap-3 items-center bg-surface-container-high rounded-full px-5 py-2">
                 <button 
                   onClick={toggleListening}
@@ -2506,6 +2655,7 @@ function AppContent() {
                     "p-2 rounded-full transition-all",
                     isListening ? "bg-red-500 text-white animate-pulse" : "text-stone-400 hover:text-primary"
                   )}
+                  title={isListening ? "Stop listening" : "Voice input"}
                 >
                   {isListening ? <MicOff size={20} /> : <Mic size={20} />}
                 </button>
@@ -2513,16 +2663,21 @@ function AppContent() {
                   type="text" 
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder={isListening ? "Listening..." : "Ask anything about farming..."}
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-3"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder={isListening ? (language === 'ta' ? 'கேட்கிறது...' : language === 'hi' ? 'सुन रहा है...' : 'Listening...') : (language === 'ta' ? 'விவசாயம் பற்றி ஏதேனும் கேட்கவும்...' : language === 'hi' ? 'खेती के बारे में कुछ भी पूछें...' : 'Ask anything about farming...')}
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-3 text-stone-800 placeholder:text-stone-400"
                 />
                 <button 
-                  onClick={handleSendMessage}
+                  onClick={() => handleSendMessage()}
                   disabled={!input.trim() || isTyping}
-                  className="p-2 bg-primary text-white rounded-full disabled:opacity-50 transition-all"
+                  className="p-2.5 bg-primary text-white rounded-full disabled:opacity-40 transition-all hover:bg-primary/90 cursor-pointer shadow-xs"
                 >
-                  <Send size={20} />
+                  <Send size={18} />
                 </button>
               </div>
             </div>
@@ -2701,75 +2856,484 @@ function AppContent() {
             </div>
           </div>
         );
-      case 'schemes':
-        const filteredSchemes = SCHEMES.filter(s => 
-          s.title.toLowerCase().includes(schemeSearchQuery.toLowerCase()) || 
-          s.desc.toLowerCase().includes(schemeSearchQuery.toLowerCase())
-        );
+      case 'schemes': {
+        const eligibleCount = GOVT_SCHEMES.filter(s => automatedSchemeEvaluations[s.id]?.status === 'eligible').length;
+
+        const filteredSchemes = GOVT_SCHEMES.filter(scheme => {
+          const matchesSearch = 
+            scheme.title.toLowerCase().includes(schemeSearchQuery.toLowerCase()) || 
+            scheme.desc.toLowerCase().includes(schemeSearchQuery.toLowerCase()) ||
+            scheme.benefit.toLowerCase().includes(schemeSearchQuery.toLowerCase()) ||
+            scheme.department.toLowerCase().includes(schemeSearchQuery.toLowerCase());
+
+          if (!matchesSearch) return false;
+
+          if (filterEligibleOnly && automatedSchemeEvaluations[scheme.id]?.status !== 'eligible') {
+            return false;
+          }
+
+          if (schemeCategoryFilter !== 'all') {
+            if (schemeCategoryFilter === 'income' && scheme.category !== 'income') return false;
+            if (schemeCategoryFilter === 'insurance' && scheme.category !== 'insurance') return false;
+            if (schemeCategoryFilter === 'credit' && scheme.category !== 'credit') return false;
+            if (schemeCategoryFilter === 'irrigation' && scheme.category !== 'irrigation' && scheme.category !== 'machinery') return false;
+          }
+
+          return true;
+        });
+
+        const toggleDocAccordion = (id: number) => {
+          setExpandedSchemeDocs(prev => ({
+            ...prev,
+            [id]: !prev[id]
+          }));
+        };
+
         return (
-          <div className="pb-32 px-6 pt-12">
-            <header className="flex items-center gap-4 mb-10">
-              <button onClick={() => setScreen('home')} className="p-2 hover:bg-stone-100 rounded-full">
-                <ChevronLeft size={24} />
-              </button>
-              <h2 className="text-2xl font-bold text-stone-800">Govt Schemes</h2>
+          <div className="pb-32 px-4 sm:px-6 pt-10 max-w-4xl mx-auto font-sans">
+            {/* Top Header */}
+            <header className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setScreen('home')} 
+                  className="p-2 hover:bg-stone-100 rounded-full transition-colors active:scale-95"
+                  aria-label="Back to Home"
+                >
+                  <ChevronLeft size={24} className="text-stone-700" />
+                </button>
+                <div>
+                  <h2 className="text-2xl font-black text-stone-900 tracking-tight">{t('schemesHeader')}</h2>
+                  <p className="text-xs text-stone-500 font-medium">
+                    {language === 'ta' 
+                      ? 'தானியங்கி தகுதி சரிபார்ப்பு மற்றும் நேரடி விண்ணப்ப போர்டல்கள்' 
+                      : language === 'hi'
+                      ? 'स्वचालित पात्रता जांच एवं सीधे आधिकारिक आवेदन पोर्टल'
+                      : 'Automated Eligibility Check & Direct Application Portals'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Farmer Profile Badge */}
+              <div className="hidden sm:flex items-center gap-2 bg-emerald-50 border border-emerald-200/80 px-3.5 py-1.5 rounded-full text-xs font-bold text-emerald-800">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>{profileData.crops}</span>
+                <span className="text-emerald-400">•</span>
+                <span>{profileData.location.split(',')[0]}</span>
+                <span className="text-emerald-400">•</span>
+                <span>{profileData.farmSize} {profileData.farmUnit}</span>
+              </div>
             </header>
 
-            <div className="mb-8 relative">
-              <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                <Search size={20} className="text-stone-400" />
+            {/* Automated AI Schemes Agent Assessment Card */}
+            <div className="mb-8 bg-gradient-to-br from-emerald-900 via-teal-900 to-green-950 text-white rounded-3xl p-6 sm:p-7 shadow-xl shadow-emerald-950/20 border border-emerald-700/40 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
+              
+              <div className="relative z-10">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-emerald-300 border border-white/15 shadow-inner">
+                      <Sparkles size={22} className="animate-pulse" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-black tracking-widest text-emerald-300/90 block">
+                        AgriSeva AI Agent
+                      </span>
+                      <h3 className="text-lg font-black tracking-tight text-white">
+                        {t('agentAssessment')}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
+                    <CheckCircle2 size={13} className="text-emerald-300" />
+                    {language === 'ta' ? 'தானியங்கி தணிக்கை' : language === 'hi' ? 'स्वतः सत्यापित' : 'Auto Verified'}
+                  </span>
+                </div>
+
+                <p className="text-xs text-emerald-100/90 font-medium leading-relaxed mb-5 max-w-2xl">
+                  {language === 'ta'
+                    ? `உங்கள் சுயவிவரத்தின்படி (${profileData.name || 'விவசாயி'}, ${profileData.crops} பயிர், ${profileData.location}, ${profileData.farmSize} ${profileData.farmUnit}), வேளாண்மை அமைச்சகம் மற்றும் மாநில அரசின் 8 முக்கிய திட்டங்களை AI முகவர் ஆய்வு செய்துள்ளது.`
+                    : language === 'hi'
+                    ? `आपके किसान प्रोफ़ाइल (${profileData.name || 'किसान'}, फसल: ${profileData.crops}, स्थान: ${profileData.location}, भूमि: ${profileData.farmSize} ${profileData.farmUnit}) के आधार पर एआई एजेंट ने 8 प्रमुख सरकारी योजनाओं की पात्रता स्वतः जांच ली है।`
+                    : `Based on your profile (${profileData.name || 'Farmer'}, cultivating ${profileData.crops} in ${profileData.location} on ${profileData.farmSize} ${profileData.farmUnit}), the AgriSeva Agent has audited 8 flagship central and state schemes.`}
+                </p>
+
+                {/* 3 Metric Summary Badges */}
+                <div className="grid grid-cols-3 gap-2.5 sm:gap-4 pt-4 border-t border-white/15">
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
+                    <span className="block text-2xl font-black text-emerald-300">{eligibleCount} / {GOVT_SCHEMES.length}</span>
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-100/80">
+                      {language === 'ta' ? 'தகுதியுடையவை' : language === 'hi' ? 'पूर्णतः पात्र' : 'Eligible Schemes'}
+                    </span>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
+                    <span className="block text-2xl font-black text-amber-300">₹6,000 +</span>
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-100/80">
+                      {language === 'ta' ? 'நேரடி மானியம்' : language === 'hi' ? 'वार्षिक सहायता' : 'Direct DBT / yr'}
+                    </span>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
+                    <span className="block text-2xl font-black text-cyan-300">4% KCC</span>
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-100/80">
+                      {language === 'ta' ? 'சலுகை கடன்' : language === 'hi' ? 'सस्ती ऋण सुविधा' : 'Subsidized Credit'}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <input 
-                type="text" 
-                value={schemeSearchQuery}
-                onChange={(e) => setSchemeSearchQuery(e.target.value)}
-                placeholder="Search schemes..."
-                className="w-full pl-12 pr-6 py-4 bg-white rounded-xl border border-stone-100 shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
-              />
             </div>
 
-            <div className="space-y-6">
-              {filteredSchemes.map((scheme) => (
-                <div key={scheme.id} className="bg-white p-8 rounded-xl border border-stone-100 shadow-sm relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-green-50 rounded-full -translate-y-1/2 translate-x-1/2"></div>
-                  <h3 className="text-xl font-bold text-primary mb-3 relative z-10">{scheme.title}</h3>
-                  <p className="text-stone-500 text-sm leading-relaxed mb-6 relative z-10">{scheme.desc}</p>
-                  
-                  {eligibilityResults[scheme.id] ? (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="mb-6 p-5 bg-green-50/60 rounded-xl border border-green-100"
-                    >
-                      <div className="flex items-center gap-2 mb-3 pb-2 border-b border-green-100/50">
-                        <CheckCircle2 size={18} className="text-primary shrink-0" />
-                        <span className="text-xs font-extrabold text-primary uppercase tracking-wider">Eligibility Assessment</span>
-                      </div>
-                      <div className="prose prose-sm prose-stone text-stone-700 leading-relaxed max-w-none text-sm font-medium">
-                        <ReactMarkdown>{eligibilityResults[scheme.id]}</ReactMarkdown>
-                      </div>
-                    </motion.div>
-                  ) : null}
-
+            {/* Search and Filter Section */}
+            <div className="space-y-3 mb-8">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                  <Search size={18} className="text-stone-400" />
+                </div>
+                <input 
+                  type="text" 
+                  value={schemeSearchQuery}
+                  onChange={(e) => setSchemeSearchQuery(e.target.value)}
+                  placeholder={t('searchSchemes')}
+                  className="w-full pl-11 pr-10 py-3.5 bg-white rounded-2xl border border-stone-200/90 shadow-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-sm font-medium text-stone-800 placeholder:text-stone-400"
+                />
+                {schemeSearchQuery && (
                   <button 
-                    onClick={() => handleCheckEligibility(scheme.id, scheme.title)}
-                    disabled={checkingSchemeId === scheme.id}
-                    className="w-full py-3 bg-secondary-container text-on-secondary-container rounded-full text-sm font-bold hover:bg-primary hover:text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    onClick={() => setSchemeSearchQuery('')}
+                    className="absolute inset-y-0 right-3 flex items-center text-stone-400 hover:text-stone-600 p-1"
                   >
-                    {checkingSchemeId === scheme.id ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-                        Checking...
-                      </>
-                    ) : (
-                      'Check Eligibility'
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Tabs & Quick Toggles */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setFilterEligibleOnly(false)}
+                  className={cn(
+                    "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all border",
+                    !filterEligibleOnly
+                      ? "bg-stone-900 text-white border-stone-900 shadow-xs"
+                      : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
+                  )}
+                >
+                  {t('allSchemes')} ({GOVT_SCHEMES.length})
+                </button>
+                <button
+                  onClick={() => setFilterEligibleOnly(true)}
+                  className={cn(
+                    "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all border flex items-center gap-1.5",
+                    filterEligibleOnly
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                      : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50/70"
+                  )}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  {t('eligibleSchemesOnly')} ({eligibleCount})
+                </button>
+
+                {/* Category Pills */}
+                <div className="h-4 w-px bg-stone-200 hidden sm:block mx-1"></div>
+
+                {[
+                  { id: 'all', label: language === 'ta' ? 'அனைத்து வகைகள்' : language === 'hi' ? 'सभी श्रेणियां' : 'All Categories' },
+                  { id: 'income', label: language === 'ta' ? 'நேரடி உதவி' : language === 'hi' ? 'आय सहायता' : 'Income DBT' },
+                  { id: 'insurance', label: language === 'ta' ? 'காப்பீடு' : language === 'hi' ? 'फसल बीमा' : 'Insurance' },
+                  { id: 'credit', label: language === 'ta' ? 'கடன் (KCC)' : language === 'hi' ? 'ऋण (KCC)' : 'Credit / KCC' },
+                  { id: 'irrigation', label: language === 'ta' ? 'பாசனம் & இயந்திரம்' : language === 'hi' ? 'सिंचाई व यंत्र' : 'Irrigation & Tools' }
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSchemeCategoryFilter(cat.id)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-medium transition-all",
+                      schemeCategoryFilter === cat.id
+                        ? "bg-emerald-100 text-emerald-800 font-bold border border-emerald-300"
+                        : "bg-stone-100 text-stone-600 hover:bg-stone-200/70"
                     )}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Schemes List */}
+            <div className="space-y-6">
+              {filteredSchemes.map((scheme) => {
+                const evalData = automatedSchemeEvaluations[scheme.id] || {
+                  status: 'eligible',
+                  matchScore: 95,
+                  reason: 'Profile matched with scheme criteria.',
+                  benefitHighlight: 'Eligible for Government assistance'
+                };
+                const isEligible = evalData.status === 'eligible';
+                const isExpanded = !!expandedSchemeDocs[scheme.id];
+
+                return (
+                  <motion.div 
+                    key={scheme.id}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="bg-white rounded-3xl border border-stone-200/90 shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+                  >
+                    {/* Card Top Header */}
+                    <div className="p-6 sm:p-7 pb-4 border-b border-stone-100">
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-2.5">
+                        <span className="text-[11px] font-bold text-stone-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Building2 size={13} className="text-stone-400" />
+                          {scheme.department}
+                        </span>
+
+                        {/* Automatic Eligibility Badge */}
+                        <div className={cn(
+                          "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black tracking-wide border shadow-2xs",
+                          isEligible 
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                            : "bg-amber-50 text-amber-700 border-amber-200"
+                        )}>
+                          <CheckCircle2 size={14} className={isEligible ? "text-emerald-600" : "text-amber-600"} />
+                          <span>
+                            {isEligible ? t('eligible') : t('likelyEligible')} ({evalData.matchScore}% Match)
+                          </span>
+                        </div>
+                      </div>
+
+                      <h3 className="text-xl font-black text-stone-900 tracking-tight mb-2">
+                        {scheme.title}
+                      </h3>
+
+                      {/* Official Benefit Banner */}
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200/70 text-emerald-900 text-xs font-bold mb-3">
+                        <span className="text-base">💰</span>
+                        <span>{scheme.benefit}</span>
+                      </div>
+
+                      <p className="text-stone-600 text-xs sm:text-sm leading-relaxed">
+                        {scheme.desc}
+                      </p>
+                    </div>
+
+                    {/* AUTOMATED AGENT ELIGIBILITY AUDIT BOX */}
+                    <div className="px-6 sm:px-7 py-4 bg-emerald-50/50 border-b border-emerald-100/70">
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-white shrink-0 mt-0.5 shadow-xs">
+                          <Sparkles size={16} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800">
+                              🤖 {t('agentAssessment')} • {profileData.name}
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
+                              {evalData.benefitHighlight}
+                            </span>
+                          </div>
+                          
+                          <p className="text-xs text-stone-700 font-medium leading-relaxed mb-3">
+                            {evalData.reason}
+                          </p>
+
+                          {/* Profile Verification Micro-Badges */}
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold text-stone-500">
+                            <span className="px-2 py-0.5 bg-white rounded-md border border-emerald-200/80 text-emerald-800 flex items-center gap-1">
+                              <Check size={11} className="text-emerald-600" />
+                              Crop: {profileData.crops}
+                            </span>
+                            <span className="px-2 py-0.5 bg-white rounded-md border border-emerald-200/80 text-emerald-800 flex items-center gap-1">
+                              <Check size={11} className="text-emerald-600" />
+                              Location: {profileData.location}
+                            </span>
+                            <span className="px-2 py-0.5 bg-white rounded-md border border-emerald-200/80 text-emerald-800 flex items-center gap-1">
+                              <Check size={11} className="text-emerald-600" />
+                              Holding: {profileData.farmSize} {profileData.farmUnit}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* DIRECT PORTAL APPLY ACTION (PRIMARY) */}
+                    <div className="p-6 sm:p-7 space-y-4">
+                      <a
+                        href={scheme.applyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-4 px-5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-2xl font-black text-sm shadow-md shadow-emerald-700/20 flex items-center justify-between transition-all group cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                            <ExternalLink size={20} className="text-white group-hover:scale-110 transition-transform" />
+                          </div>
+                          <div className="text-left">
+                            <span className="block font-black text-sm tracking-wide leading-tight">
+                              {t('applyOnPortal')} ↗
+                            </span>
+                            <span className="block text-[11px] text-emerald-100 font-medium opacity-95">
+                              {scheme.portalName}
+                            </span>
+                          </div>
+                        </div>
+                        <ArrowUpRight size={22} className="text-white group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform shrink-0" />
+                      </a>
+
+                      <p className="text-[11px] text-stone-400 font-medium text-center flex items-center justify-center gap-1">
+                        <ShieldCheck size={13} className="text-emerald-600 shrink-0" />
+                        {t('directPortalLinkNotice')}
+                      </p>
+
+                      {/* Accordion / Secondary Tools */}
+                      <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
+                        <button
+                          onClick={() => toggleDocAccordion(scheme.id)}
+                          className="flex items-center gap-1.5 text-xs font-bold text-stone-600 hover:text-stone-900 transition-colors py-1"
+                        >
+                          <FileText size={15} className="text-stone-400" />
+                          <span>{t('requiredDocs')} & Highlights</span>
+                          {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                        </button>
+
+                        <button
+                          onClick={() => handleCheckEligibility(scheme.id, scheme.title)}
+                          disabled={checkingSchemeId === scheme.id}
+                          className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 transition-colors py-1 disabled:opacity-50"
+                        >
+                          {checkingSchemeId === scheme.id ? (
+                            <>
+                              <div className="w-3.5 h-3.5 border-2 border-emerald-600/30 border-t-emerald-600 rounded-full animate-spin"></div>
+                              <span>{t('checkingEligibility')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={14} className="text-emerald-600" />
+                              <span>{t('detailedAnalysis')}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Expanded Documents and Highlights Panel */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="pt-3 space-y-4 text-xs overflow-hidden"
+                          >
+                            {/* Required Documents */}
+                            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/70">
+                              <p className="font-extrabold text-stone-800 uppercase tracking-wider text-[11px] mb-2.5 flex items-center gap-1.5">
+                                <FileText size={14} className="text-stone-500" />
+                                {t('requiredDocs')}
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {scheme.documents.map((doc, idx) => (
+                                  <div key={idx} className="flex items-center gap-2 text-stone-700">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                    <span>{doc}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Key Highlights */}
+                            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/70">
+                              <p className="font-extrabold text-stone-800 uppercase tracking-wider text-[11px] mb-2 flex items-center gap-1.5">
+                                <CheckCircle2 size={14} className="text-stone-500" />
+                                {t('keyHighlights')}
+                              </p>
+                              <ul className="space-y-1.5 text-stone-600">
+                                {scheme.keyHighlights.map((hl, idx) => (
+                                  <li key={idx} className="flex items-start gap-2">
+                                    <span className="text-emerald-600 font-bold">•</span>
+                                    <span>{hl}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+
+                            {/* Helpline */}
+                            {scheme.helpline && (
+                              <div className="flex items-center justify-between p-3 bg-stone-100/70 rounded-xl text-stone-600 font-medium">
+                                <span className="flex items-center gap-2">
+                                  <PhoneCall size={14} className="text-emerald-600" />
+                                  <span>{t('helpline')}: <strong>{scheme.helpline}</strong></span>
+                                </span>
+                                <span className="text-[10px] text-stone-400 uppercase font-bold">Toll Free / Central Desk</span>
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Detailed AI Gemini Assessment Output */}
+                      {eligibilityResults[scheme.id] && (
+                        <motion.div 
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="p-5 bg-emerald-50/70 rounded-2xl border border-emerald-200"
+                        >
+                          <div className="flex items-center justify-between mb-3 pb-2 border-b border-emerald-200/60">
+                            <div className="flex items-center gap-2">
+                              <Sparkles size={16} className="text-emerald-700" />
+                              <span className="text-xs font-black text-emerald-900 uppercase tracking-wider">
+                                {t('detailedAnalysis')}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setEligibilityResults(prev => {
+                                const next = { ...prev };
+                                delete next[scheme.id];
+                                return next;
+                              })}
+                              className="text-[11px] font-bold text-stone-400 hover:text-stone-700"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="prose prose-sm prose-stone text-stone-800 leading-relaxed max-w-none text-xs sm:text-sm font-medium">
+                            <ReactMarkdown>{eligibilityResults[scheme.id]}</ReactMarkdown>
+                          </div>
+                        </motion.div>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+
+              {filteredSchemes.length === 0 && (
+                <div className="py-16 text-center bg-white rounded-3xl border border-stone-200 p-8">
+                  <div className="w-14 h-14 bg-stone-100 rounded-2xl flex items-center justify-center mx-auto mb-3 text-stone-400">
+                    <Search size={28} />
+                  </div>
+                  <h4 className="text-base font-bold text-stone-800 mb-1">
+                    {language === 'ta' ? 'திட்டங்கள் எதுவும் பொருந்தவில்லை' : language === 'hi' ? 'कोई योजना नहीं मिली' : 'No matching schemes found'}
+                  </h4>
+                  <p className="text-xs text-stone-500 mb-4">
+                    {language === 'ta' 
+                      ? 'உங்கள் தேடல் சொல்லை மாற்றி முயற்சிக்கவும் அல்லது வடிகட்டிகளை மீட்டமைக்கவும்.' 
+                      : language === 'hi'
+                      ? 'अपनी खोज बदलें या फ़िल्टर रीसेट करें।'
+                      : 'Try adjusting your search terms or reset the filters.'}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSchemeSearchQuery('');
+                      setFilterEligibleOnly(false);
+                      setSchemeCategoryFilter('all');
+                    }}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-xs hover:bg-emerald-700"
+                  >
+                    {language === 'ta' ? 'வடிகட்டிகளை மீட்டமை' : language === 'hi' ? 'फ़िल्टर रीसेट करें' : 'Reset Filters'}
                   </button>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         );
+      }
       case 'market': {
         const getChartData = (view: 'primary' | 'average', timeframe: '1m' | '3m' | '6m') => {
           const baseData = view === 'primary' ? MARKET_TRENDS : AVERAGE_MARKET_TRENDS;
@@ -2806,13 +3370,13 @@ function AppContent() {
               <button onClick={() => setScreen('home')} className="p-2 hover:bg-stone-100 rounded-full">
                 <ChevronLeft size={24} />
               </button>
-              <h2 className="text-2xl font-bold text-stone-800">Market Prices</h2>
+              <h2 className="text-2xl font-bold text-stone-800">{t('marketPrices')}</h2>
             </header>
 
             {isMarketLoading ? (
               <div className="py-20 flex flex-col items-center justify-center">
                 <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-4"></div>
-                <p className="text-lg font-bold text-stone-400">Fetching live prices...</p>
+                <p className="text-lg font-bold text-stone-400">{t('fetchingLivePrices')}</p>
               </div>
             ) : (
               <>
@@ -2820,7 +3384,7 @@ function AppContent() {
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-2">
                       <History size={20} className="text-primary" />
-                      <h3 className="font-bold text-stone-800">Price Trends</h3>
+                      <h3 className="font-bold text-stone-800">{t('priceTrends')}</h3>
                     </div>
                     <div className="text-right">
                       <p className="text-[10px] uppercase font-bold text-stone-400 tracking-wider">
@@ -2912,8 +3476,28 @@ function AppContent() {
                   </p>
                 </div>
 
+                {/* 3-YEAR HISTORICAL MONTH COMPARISON FEATURE */}
+                <HistoricalMarketPriceComparison
+                  currentCrops={[profileData.crops, ...(marketData?.prices.map(p => p.crop) || [])]}
+                  primaryCrop={profileData.crops || 'Paddy'}
+                  marketPrices={marketData?.prices || []}
+                  location={profileData.location || 'Salem'}
+                  language={language}
+                  onSetAlertClick={() => setScreen('alerts')}
+                />
+
+                {/* 3-MONTH AI-POWERED PRICE FORECAST CARD */}
+                <CropPriceForecastCard
+                  currentCrops={[profileData.crops, ...(marketData?.prices.map(p => p.crop) || [])]}
+                  primaryCrop={profileData.crops || 'Paddy'}
+                  marketPrices={marketData?.prices || []}
+                  location={profileData.location || 'Salem, Tamil Nadu'}
+                  language={language}
+                  onSetAlertClick={() => setScreen('alerts')}
+                />
+
                 <div className="space-y-6">
-                  <h3 className="text-lg font-bold text-stone-800">Live Mandi Prices</h3>
+                  <h3 className="text-lg font-bold text-stone-800">{t('liveMandiPrices')}</h3>
                   {marketData?.prices.map((price, index) => {
                     const converted = getPricePerKg(price.price, price.unit);
                     return (
@@ -2949,16 +3533,16 @@ function AppContent() {
                           <span className="text-[10px] text-stone-300 font-medium">Updated: {price.date}</span>
                           <button 
                             onClick={() => setScreen('alerts')}
-                            className="text-[10px] font-bold text-primary hover:underline"
+                            className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
                           >
-                            Set Alert
+                            {t('setAlert')}
                           </button>
                         </div>
                       </motion.div>
                     )})}
                   {!marketData?.prices.length && (
                     <div className="py-10 text-center bg-white rounded-xl border border-stone-100 shadow-sm">
-                      <p className="text-stone-400">No live prices found for your crops in this location.</p>
+                      <p className="text-stone-400">{t('noLivePrices')}</p>
                     </div>
                   )}
                 </div>
@@ -3324,6 +3908,8 @@ function AppContent() {
                           <option value="Hectares">Hectares</option>
                           <option value="Bigha">Bigha</option>
                           <option value="Gunta">Gunta</option>
+                          <option value="Cent">Cent</option>
+                          <option value="Kanal">Kanal</option>
                         </select>
                       </div>
                     </div>
@@ -3709,7 +4295,24 @@ function AppContent() {
                   )}
                 </AnimatePresence>
 
-                <div className="space-y-4">
+                <div className="space-y-5">
+                  {/* RECHARTS HISTORICAL YIELD PERFORMANCE VISUALIZATION */}
+                  <CropYieldHistoryChart
+                    cropHistoryList={cropHistoryList}
+                    primaryCrop={profileData.crops || 'Paddy'}
+                    language={language}
+                    farmUnit={profileData.farmUnit}
+                    farmSize={profileData.farmSize}
+                    onAddRecordClick={() => {
+                      setIsAddingHistory(true);
+                      setNewHistoryCrop(profileData.crops || VALID_CROPS[0]);
+                      setNewHistorySeason('Kharif');
+                      setNewHistoryYear(new Date().getFullYear());
+                      setNewHistoryYield('');
+                      setNewHistoryNotes('');
+                    }}
+                  />
+
                   {/* AI PREDICTIVE YIELD ESTIMATOR */}
                   <div className="bg-gradient-to-br from-emerald-900 to-green-950 p-6 rounded-3xl text-white shadow-xl border border-emerald-800/50 overflow-hidden relative">
                     <div className="absolute top-0 right-0 -mt-8 -mr-8 w-36 h-36 bg-green-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -3899,13 +4502,47 @@ function AppContent() {
                   </div>
 
                   {cropHistoryList.length === 0 ? (
-                    <div className="bg-white p-8 rounded-2xl border border-stone-100 shadow-sm text-center py-12">
-                      <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4 text-primary">
+                    <div className="bg-white p-8 rounded-2xl border border-stone-100 shadow-sm text-center py-10 space-y-4">
+                      <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto text-primary">
                         <Sprout size={32} />
                       </div>
-                      <p className="text-stone-400 font-medium text-sm px-6">
+                      <p className="text-stone-500 font-medium text-sm px-6 max-w-md mx-auto">
                         {t('noCropHistory')}
                       </p>
+                      <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                        <button
+                          onClick={() => {
+                            setIsAddingHistory(true);
+                            setNewHistoryCrop(profileData.crops || VALID_CROPS[0]);
+                            setNewHistorySeason('Kharif');
+                            setNewHistoryYear(new Date().getFullYear());
+                            setNewHistoryYield('');
+                            setNewHistoryNotes('');
+                          }}
+                          className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl shadow-sm hover:bg-primary/95 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus size={14} />
+                          {t('addRecord')}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const sampleCrop = profileData.crops || 'Paddy';
+                            const demoRecords = [
+                              { cropName: sampleCrop, season: 'Kharif', year: 2022, yieldValue: '1920 kg / acre', notes: 'Normal monsoon, applied neem coated urea' },
+                              { cropName: sampleCrop, season: 'Kharif', year: 2023, yieldValue: '2150 kg / acre', notes: 'Timely weed control and micronutrient spray' },
+                              { cropName: sampleCrop, season: 'Kharif', year: 2024, yieldValue: '2380 kg / acre', notes: 'SRI method adopted, excellent grain filling' },
+                              { cropName: sampleCrop, season: 'Kharif', year: 2025, yieldValue: '2460 kg / acre', notes: 'Bio-fertilizers trial with drip line irrigation' }
+                            ];
+                            for (const rec of demoRecords) {
+                              await handleAddCropHistory(rec);
+                            }
+                          }}
+                          className="px-4 py-2 bg-stone-100 text-stone-700 hover:bg-stone-200 text-xs font-bold rounded-xl active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Sparkles size={13} className="text-amber-500" />
+                          {language === 'ta' ? 'மாதிரி பதிவுகளை ஏற்று' : language === 'hi' ? 'डेमो रिकॉर्ड लोड करें' : 'Load Sample Multi-Year Records'}
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <>
